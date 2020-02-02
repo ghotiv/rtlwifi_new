@@ -1,5 +1,5 @@
-rtlwifi_new
-===========
+# rtlwifi_new
+
 ### A repo for the newest Realtek rtlwifi codes.
 
 If your card is an RTL8822BE or RTL8822CE, then skip this part and read the instructions below.
@@ -17,9 +17,10 @@ rtl8192ce, rtl8192cu, rtl8192se, rtl8192de, rtl8188ee, rtl8192ee, rtl8723ae, rtl
 and rtl8723de. The rtl8723de is available ONLY in the extended branch, which is the recommended one.
 
 #### Installation instruction
+
 You can find <<YOUR WIRELESS DRIVER CODE>> using `lspci | grep Wireless`.
-Afterwards, execute the following lines of codes in your shell:  
-  
+Afterwards, execute the following lines of codes in your shell:
+
 ```
 You will need to install "make", "gcc", "kernel headers", "kernel build essentials", and "git".
 
@@ -40,7 +41,7 @@ sudo modprobe <<YOUR WIRELESS DRIVER CODE>>
 #### Option configuration
 If it turns out that your system needs one of the configuration options, then do the following:
 
-sudo vim /etc/modprobe.d/<<YOUR WIRELESS DRIVER CODE>>.conf 
+sudo vim /etc/modprobe.d/<<YOUR WIRELESS DRIVER CODE>>.conf
 
 There, enter the line below:
 `options <<YOUR WIRELESS DRIVER CODE>> <<driver_option_name>>=<value>`
@@ -59,7 +60,7 @@ If the signal for the AP to which you wish to connect is -60 or less, then you h
 The fix is to supply the "ant_sel" option. Run the following commands (set 2):
 
 sudo su -
-echo "options rtl8723be ant_sel=2" > /etc/modprobe.d/50-rtl8723be.conf
+echo "options rtl8723de ant_sel=2" > /etc/modprobe.d/50-rtl8723de.conf
 exit
 
 If you have an RTL8723DE, make the appropriate adjustments to the above command.
@@ -90,3 +91,4 @@ Remember, this MUST be done whenever you get a new kernel - no exceptions.
 
 These drivers will not build for kernels older than 4.14. If you are using a kernel newer than 5.2,
 I suggest that you use the driver built into the kernel!
+```
