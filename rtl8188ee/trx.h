@@ -542,17 +542,8 @@ do {								\
 	 rxmcs == DESC92C_RATE5_5M ||\
 	 rxmcs == DESC92C_RATE11M)
 
-#define IS_LITTLE_ENDIAN	1
-
-struct phy_rx_agc_info_t {
-	#if IS_LITTLE_ENDIAN
-		u8	gain:7, trsw:1;
-	#else
-		u8	trsw:1, gain:7;
-	#endif
-};
 struct phy_status_rpt {
-	struct phy_rx_agc_info_t path_agc[2];
+	u8	padding[2];
 	u8	ch_corr[2];
 	u8	cck_sig_qual_ofdm_pwdb_all;
 	u8	cck_agc_rpt_ofdm_cfosho_a;
@@ -569,7 +560,7 @@ struct phy_status_rpt {
 	u8	stream_target_csi[2];
 	u8	sig_evm;
 	u8	rsvd_3;
-#if IS_LITTLE_ENDIAN
+#if defined(__LITTLE_ENDIAN)
 	u8	antsel_rx_keep_2:1;	/*ex_intf_flg:1;*/
 	u8	sgi_en:1;
 	u8	rxsc:2;
@@ -577,7 +568,7 @@ struct phy_status_rpt {
 	u8	r_ant_train_en:1;
 	u8	ant_sel_b:1;
 	u8	ant_sel:1;
-#else	/* _BIG_ENDIAN_	*/
+#else	/* __BIG_ENDIAN	*/
 	u8	ant_sel:1;
 	u8	ant_sel_b:1;
 	u8	r_ant_train_en:1;
