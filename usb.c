@@ -551,7 +551,7 @@ static void _rtl_rx_pre_process(struct ieee80211_hw *hw, struct sk_buff *skb)
 	}
 }
 
-#define __RX_SKB_MAX_QUEUED	64
+#define __RX_SKB_MAX_QUEUED	96
 
 static void _rtl_rx_work(unsigned long param)
 {
