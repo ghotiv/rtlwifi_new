@@ -103,6 +103,7 @@ endif
 	@depmod -a $(KVER)
 
 	@#copy firmware images to target folder
+	@mkdir -p $(FIRMWAREDIR)
 	@cp -fr firmware/rtlwifi/ $(FIRMWAREDIR)/
 	@echo "Install rtlwifi SUCCESS"
 
