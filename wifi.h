@@ -1625,7 +1625,11 @@ struct rtl_hal {
 	bool enter_pnp_sleep;
 	bool wake_from_pnp_sleep;
 	bool wow_enabled;
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 6, 0))
+	__kernel_old_time_t last_suspend_sec;
+#else
 	__kernel_time_t last_suspend_sec;
+#endif
 	u32 wowlan_fwsize;
 	u8 *wowlan_firmware;
 
