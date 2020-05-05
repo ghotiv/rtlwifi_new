@@ -245,10 +245,11 @@ static void rtl_rate_update(void *ppriv,
 {
 }
 
+#ifdef RTL_RATE_ALLOC_1_ARG
 static void *rtl_rate_alloc(struct ieee80211_hw *hw)
-/* Change the preceeding line to
+#else
 static void *rtl_rate_alloc(struct ieee80211_hw *hw, struct dentry *debugfsdir)
-*/
+#endif
 {
 	struct rtl_priv *rtlpriv = rtl_priv(hw);
 	return rtlpriv;
@@ -283,7 +284,6 @@ static void rtl_rate_free_sta(void *rtlpriv,
 	kfree(rate_priv);
 }
 
-/* If you get a failure here, then follow the instructions at function rtl_rate_alloc */
 static struct rate_control_ops rtl_rate_ops = {
 	.name = "rtl_rc",
 	.alloc = rtl_rate_alloc,

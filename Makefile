@@ -53,6 +53,24 @@ obj-m	+= rtl8723be/
 obj-m	+= rtl8821ae/
 
 ccflags-y += -D__CHECK_ENDIAN__
+#subdir-ccflags-y += -Werror
+
+ifeq ("$(KVER)", $(filter "$(KVER)", "3.14.35-031435-generic" "3.14.35-031435-lowlatency"))
+ccflags-y += -D_ieee80211_is_robust_mgmt_frame=ieee80211_is_robust_mgmt_frame
+subdir-ccflags-y += -D_ieee80211_is_robust_mgmt_frame=ieee80211_is_robust_mgmt_frame
+endif
+# Determine # args for rtl_rate_alloc
+TEMP=$(shell grep alloc ${KSRC}/include/net/mac80211.h | grep void | grep dentry)
+ifeq (${TEMP},)
+ccflags-y += -DRTL_RATE_ALLOC_1_ARG
+endif
+# for uncooked code
+uncooked_ccflags-y += -DBT_SUPPORT=1
+uncooked_ccflags-y += -DCOEX_SUPPORT=1
+uncooked_ccflags-y += -DRTL8822B_SUPPORT=1
+uncooked_ccflags-y += -DRTL8723D_SUPPORT=1
+ccflags-y += $(uncooked_ccflags-y)
+subdir-ccflags-y += $(uncooked_ccflags-y)
 
 all: 
 	$(MAKE) -C $(KSRC) M=$(PWD) modules
