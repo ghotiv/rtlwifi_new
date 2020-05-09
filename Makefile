@@ -1,6 +1,6 @@
 SHELL := /bin/sh
 CC = gcc
-KVER  ?= $(shell uname -r)
+KVER  ?= $(if $(KERNELRELEASE),$(KERNELRELEASE),$(shell uname -r))
 KSRC := /lib/modules/$(KVER)/build
 FIRMWAREDIR := /lib/firmware/
 PWD := $(shell pwd)
