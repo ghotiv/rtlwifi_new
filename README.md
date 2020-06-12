@@ -11,5 +11,6 @@ then you need the rtw88 branch:
 
 git checkout origin/rtw88 -b rtw88
 
-Then follow the README there.
-``
+Then follow the [README there.](https://github.com/lwfinger/rtlwifi_new/tree/rtw88)
+
+**DISCLAIMER**: If you don't read any of this README, I will not answer to any of your issues
