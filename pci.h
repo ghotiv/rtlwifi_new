@@ -39,6 +39,7 @@
 #define RTL_PCI_RX_CMD_QUEUE			1
 #define RTL_PCI_MAX_RX_QUEUE			2
 
+#define RX_DESC_NUM_92E				512
 #define RTL_PCI_MAX_RX_COUNT			512/*64*/
 #define RTL_PCI_MAX_TX_QUEUE_COUNT		9
 
@@ -287,7 +288,7 @@ int rtl_pci_resume(struct device *dev);
 
 static inline u8 pci_read8_sync(struct rtl_priv *rtlpriv, u32 addr)
 {
-	return 0xff & readb((u8 __iomem *) rtlpriv->io.pci_mem_start + addr);
+	return readb((u8 __iomem *)rtlpriv->io.pci_mem_start + addr);
 }
 
 static inline u16 pci_read16_sync(struct rtl_priv *rtlpriv, u32 addr)
@@ -341,5 +342,19 @@ static inline void rtl_pci_raw_read_port_ulong(u32 port, u32 *pval)
 {
 	*pval = inl(port);
 }
+
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,17,0))
+static inline void *
+pci_zalloc_consistent(struct pci_dev *hwdev, size_t size,
+		      dma_addr_t *dma_handle)
+{
+	void *tmp;
+
+	tmp = pci_alloc_consistent(hwdev, size, dma_handle);
+	if (tmp)
+		memset(tmp, 0, size);
+	return tmp;
+}
+#endif
 
 #endif

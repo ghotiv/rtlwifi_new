@@ -98,7 +98,7 @@ static void load_wowlan_fw(struct rtl_priv *rtlpriv)
 	int err;
 
 	/* for wowlan firmware buf */
-	rtlpriv->rtlhal.wowlan_firmware = vmalloc(0x8000);
+	rtlpriv->rtlhal.wowlan_firmware = vzalloc(0x8000);
 	if (!rtlpriv->rtlhal.wowlan_firmware) {
 		RT_TRACE(rtlpriv, COMP_ERR, DBG_EMERG,
 			 "Can't alloc buffer for wowlan fw.\n");
@@ -321,7 +321,6 @@ static struct rtl_hal_ops rtl8821ae_hal_ops = {
 	.is_tx_desc_closed = rtl8821ae_is_tx_desc_closed,
 	.tx_polling = rtl8821ae_tx_polling,
 	.enable_hw_sec = rtl8821ae_enable_hw_security_config,
-	.set_key = rtl8821ae_set_key,
 	.init_sw_leds = rtl8821ae_init_sw_leds,
 	.allow_all_destaddr = rtl8821ae_allow_all_destaddr,
 	.get_bbreg = rtl8821ae_phy_query_bb_reg,

@@ -163,7 +163,7 @@ int rtl88e_init_sw_vars(struct ieee80211_hw *hw)
 		rtlpriv->psc.fwctrl_psmode = FW_PS_DTIM_MODE;
 
 	/* for firmware buf */
-	rtlpriv->rtlhal.pfirmware = vmalloc(0x8000);
+	rtlpriv->rtlhal.pfirmware = vzalloc(0x8000);
 	if (!rtlpriv->rtlhal.pfirmware) {
 		RT_TRACE(rtlpriv, COMP_ERR, DBG_EMERG,
 			 "Can't alloc buffer for fw.\n");
@@ -263,7 +263,6 @@ static struct rtl_hal_ops rtl8188ee_hal_ops = {
 	.is_tx_desc_closed = rtl88ee_is_tx_desc_closed,
 	.tx_polling = rtl88ee_tx_polling,
 	.enable_hw_sec = rtl88ee_enable_hw_security_config,
-	.set_key = rtl88ee_set_key,
 	.init_sw_leds = rtl88ee_init_sw_leds,
 	.allow_all_destaddr = rtl88ee_allow_all_destaddr,
 	.get_bbreg = rtl88e_phy_query_bb_reg,
@@ -366,21 +365,21 @@ static struct rtl_hal_cfg rtl88ee_hal_cfg = {
 	.maps[RTL_IMR_HSISR_IND] = IMR_HSISR_IND_ON_INT,
 	.maps[RTL_IBSS_INT_MASKS] = (IMR_BCNDMAINT0 | IMR_TBDOK | IMR_TBDER),
 
-	.maps[RTL_RC_CCK_RATE1M] = DESC92C_RATE1M,
-	.maps[RTL_RC_CCK_RATE2M] = DESC92C_RATE2M,
-	.maps[RTL_RC_CCK_RATE5_5M] = DESC92C_RATE5_5M,
-	.maps[RTL_RC_CCK_RATE11M] = DESC92C_RATE11M,
-	.maps[RTL_RC_OFDM_RATE6M] = DESC92C_RATE6M,
-	.maps[RTL_RC_OFDM_RATE9M] = DESC92C_RATE9M,
-	.maps[RTL_RC_OFDM_RATE12M] = DESC92C_RATE12M,
-	.maps[RTL_RC_OFDM_RATE18M] = DESC92C_RATE18M,
-	.maps[RTL_RC_OFDM_RATE24M] = DESC92C_RATE24M,
-	.maps[RTL_RC_OFDM_RATE36M] = DESC92C_RATE36M,
-	.maps[RTL_RC_OFDM_RATE48M] = DESC92C_RATE48M,
-	.maps[RTL_RC_OFDM_RATE54M] = DESC92C_RATE54M,
+	.maps[RTL_RC_CCK_RATE1M] = DESC_RATE1M,
+	.maps[RTL_RC_CCK_RATE2M] = DESC_RATE2M,
+	.maps[RTL_RC_CCK_RATE5_5M] = DESC_RATE5_5M,
+	.maps[RTL_RC_CCK_RATE11M] = DESC_RATE11M,
+	.maps[RTL_RC_OFDM_RATE6M] = DESC_RATE6M,
+	.maps[RTL_RC_OFDM_RATE9M] = DESC_RATE9M,
+	.maps[RTL_RC_OFDM_RATE12M] = DESC_RATE12M,
+	.maps[RTL_RC_OFDM_RATE18M] = DESC_RATE18M,
+	.maps[RTL_RC_OFDM_RATE24M] = DESC_RATE24M,
+	.maps[RTL_RC_OFDM_RATE36M] = DESC_RATE36M,
+	.maps[RTL_RC_OFDM_RATE48M] = DESC_RATE48M,
+	.maps[RTL_RC_OFDM_RATE54M] = DESC_RATE54M,
 
-	.maps[RTL_RC_HT_RATEMCS7] = DESC92C_RATEMCS7,
-	.maps[RTL_RC_HT_RATEMCS15] = DESC92C_RATEMCS15,
+	.maps[RTL_RC_HT_RATEMCS7] = DESC_RATEMCS7,
+	.maps[RTL_RC_HT_RATEMCS15] = DESC_RATEMCS15,
 };
 
 static struct pci_device_id rtl88ee_pci_ids[] = {

@@ -94,19 +94,28 @@ static void _rtl92ee_return_beacon_queue_skb(struct ieee80211_hw *hw)
 	struct rtl_priv *rtlpriv = rtl_priv(hw);
 	struct rtl_pci *rtlpci = rtl_pcidev(rtl_pcipriv(hw));
 	struct rtl8192_tx_ring *ring = &rtlpci->tx_ring[BEACON_QUEUE];
+	unsigned long flags;
 
+	RT_TRACE(rtlpriv, COMP_ERR, DBG_DMESG, "do not delete beacon queue skb currently   \n");
+	return;
+
+	spin_lock_irqsave(&rtlpriv->locks.irq_th_lock, flags);
 	while (skb_queue_len(&ring->queue)) {
 		struct rtl_tx_buffer_desc *entry =
 						&ring->buffer_desc[ring->idx];
 		struct sk_buff *skb = __skb_dequeue(&ring->queue);
+		dma_addr_t dma_addr = rtlpriv->cfg->ops->get_desc(
+                                 (u8 *)entry, true, HW_DESC_TXBUFF_ADDR);
 
-		pci_unmap_single(rtlpci->pdev,
-				 rtlpriv->cfg->ops->get_desc(
-				 (u8 *) entry, true, HW_DESC_TXBUFF_ADDR),
-				 skb->len, PCI_DMA_TODEVICE);
+		if (dma_addr) {
+			pci_unmap_single(rtlpci->pdev, dma_addr,
+					 skb->len, PCI_DMA_TODEVICE);
+			pr_info("********* unmapping needed *******\n");
+		}
 		kfree_skb(skb);
 		ring->idx = (ring->idx + 1) % ring->entries;
 	}
+	spin_unlock_irqrestore(&rtlpriv->locks.irq_th_lock, flags);
 
 }
 static void _rtl92ee_disable_bcn_sub_func(struct ieee80211_hw *hw)
@@ -119,11 +128,8 @@ static void _rtl92ee_set_fw_clock_on(struct ieee80211_hw *hw,
 {
 	struct rtl_priv *rtlpriv = rtl_priv(hw);
 	struct rtl_hal *rtlhal = rtl_hal(rtl_priv(hw));
-	bool b_support_remote_wake_up;
 	u32 count = 0 , isr_regaddr , content;
 	bool b_schedule_timer = b_need_turn_off_ckk;
-	rtlpriv->cfg->ops->get_hw_reg(hw, HAL_DEF_WOWLAN,
-				      (u8 *) (&b_support_remote_wake_up));
 
 	if (!rtlhal->fw_ready)
 		return;
@@ -363,7 +369,7 @@ void rtl92ee_get_hw_reg(struct ieee80211_hw *hw, u8 variable, u8 *val)
 		}
 		break;
 	default:
-		RT_TRACE(rtlpriv, COMP_ERR, DBG_EMERG,
+		RT_TRACE(rtlpriv, COMP_ERR, DBG_DMESG,
 			 "switch case not process %x\n", variable);
 		break;
 	}
@@ -589,10 +595,10 @@ void rtl92ee_set_hw_reg(struct ieee80211_hw *hw, u8 variable, u8 *val)
 				acm_ctrl &= (~AcmHw_ViqEn);
 				break;
 			case AC3_VO:
-				acm_ctrl &= (~AcmHw_BeqEn);
+				acm_ctrl &= (~AcmHw_VoqEn);
 				break;
 			default:
-				RT_TRACE(rtlpriv, COMP_ERR, DBG_EMERG,
+				RT_TRACE(rtlpriv, COMP_ERR, DBG_DMESG,
 					 "switch case not process\n");
 				break;
 			}
@@ -709,7 +715,7 @@ void rtl92ee_set_hw_reg(struct ieee80211_hw *hw, u8 variable, u8 *val)
 		}
 		break;
 	default:
-		RT_TRACE(rtlpriv, COMP_ERR, DBG_EMERG,
+		RT_TRACE(rtlpriv, COMP_ERR, DBG_DMESG,
 			 "switch case not process %x\n", variable);
 		break;
 	}
@@ -1160,6 +1166,130 @@ void rtl92ee_enable_hw_security_config(struct ieee80211_hw *hw)
 
 }
 
+
+
+static bool _rtl8192ee_check_pcie_dma_hang(struct rtl_priv *rtlpriv)
+{
+	u8 tmp;
+
+	/* write reg 0x350 Bit[26]=1. Enable debug port. */
+	tmp = rtl_read_byte(rtlpriv, REG_BACKDOOR_DBI_DATA + 3);
+	if (!(tmp & BIT(2))) {
+		rtl_write_byte(rtlpriv, REG_BACKDOOR_DBI_DATA + 3, (tmp | BIT(2)));
+		mdelay(100); /* Suggested by DD Justin_tsai. */
+	}
+
+	/* read reg 0x350 Bit[25] if 1 : RX hang
+	 * read reg 0x350 Bit[24] if 1 : TX hang */
+	tmp = rtl_read_byte(rtlpriv, REG_BACKDOOR_DBI_DATA + 3);
+	if ((tmp & BIT(0)) || (tmp & BIT(1))) {
+		RT_TRACE(rtlpriv, COMP_INIT, DBG_LOUD,
+			 "CheckPcieDMAHang8192EE(): true!!\n");
+		return true;
+	} else {
+		return false;
+	}
+}
+
+static void _rtl8192ee_reset_pcie_interface_dma(struct rtl_priv *rtlpriv,
+					 bool mac_power_on)
+{
+	u8 tmp;
+	bool release_mac_rx_pause;
+	u8 backup_pcie_dma_pause;
+
+	RT_TRACE(rtlpriv, COMP_INIT, DBG_LOUD, "ResetPcieInterfaceDMA8192EE()\n");
+
+	/* Revise Note: Follow the document "PCIe RX DMA Hang Reset Flow_v03"
+	 * released by SD1 Alan.
+	 * 2013.05.07, by tynli. */
+
+	/* 1. disable register write lock
+	 *	write 0x1C bit[1:0] = 2'h0
+	 *	write 0xCC bit[2] = 1'b1 */
+	tmp = rtl_read_byte(rtlpriv, REG_RSV_CTRL);
+	tmp &= ~(BIT(1) | BIT(0));
+	rtl_write_byte(rtlpriv, REG_RSV_CTRL, tmp);
+	tmp = rtl_read_byte(rtlpriv, REG_PMC_DBG_CTRL2);
+	tmp |= BIT(2);
+	rtl_write_byte(rtlpriv, REG_PMC_DBG_CTRL2, tmp);
+
+	/* 2. Check and pause TRX DMA
+	 *	write 0x284 bit[18] = 1'b1
+	 *	write 0x301 = 0xFF */
+	tmp = rtl_read_byte(rtlpriv, REG_RXDMA_CONTROL);
+	if (tmp & BIT(2)) {
+		/* Already pause before the function for another purpose. */
+		release_mac_rx_pause = false;
+	} else {
+		rtl_write_byte(rtlpriv, REG_RXDMA_CONTROL, (tmp | BIT(2)));
+		release_mac_rx_pause = true;
+	}
+
+	backup_pcie_dma_pause = rtl_read_byte(rtlpriv, REG_PCIE_CTRL_REG + 1);
+	if (backup_pcie_dma_pause != 0xFF)
+		rtl_write_byte(rtlpriv, REG_PCIE_CTRL_REG + 1, 0xFF);
+
+	if (mac_power_on) {
+		/* 3. reset TRX function
+		 *	write 0x100 = 0x00 */
+		rtl_write_byte(rtlpriv, REG_CR, 0);
+	}
+
+	/* 4. Reset PCIe DMA
+	 *	write 0x003 bit[0] = 0 */
+	tmp = rtl_read_byte(rtlpriv, REG_SYS_FUNC_EN + 1);
+	tmp &= ~(BIT(0));
+	rtl_write_byte(rtlpriv, REG_SYS_FUNC_EN + 1, tmp);
+
+	/* 5. Enable PCIe DMA
+	 *	write 0x003 bit[0] = 1 */
+	tmp = rtl_read_byte(rtlpriv, REG_SYS_FUNC_EN + 1);
+	tmp |= BIT(0);
+	rtl_write_byte(rtlpriv, REG_SYS_FUNC_EN + 1, tmp);
+
+	if (mac_power_on) {
+		/* 6. enable TRX function
+		 *	write 0x100 = 0xFF */
+		rtl_write_byte(rtlpriv, REG_CR, 0xFF);
+
+		/* We should init LLT & RQPN and
+		 * prepare Tx/Rx descrptor address later
+		 * because MAC function is reset. */
+	}
+
+	/* 7. Restore PCIe autoload down bit
+	 *	write 0xF8 bit[17] = 1'b1 */
+	tmp = rtl_read_byte(rtlpriv, REG_MAC_PHY_CTRL_NORMAL + 2);
+	tmp |= BIT(1);
+	rtl_write_byte(rtlpriv, REG_MAC_PHY_CTRL_NORMAL + 2, tmp);
+
+	/* In MAC power on state, BB and RF maybe in ON state,
+	 * if we release TRx DMA here
+	 * it will cause packets to be started to Tx/Rx,
+	 * so we release Tx/Rx DMA later. */
+	if (!mac_power_on) {
+		/* 8. release TRX DMA
+		 *	write 0x284 bit[18] = 1'b0
+		 *	write 0x301 = 0x00 */
+		if (release_mac_rx_pause) {
+			tmp = rtl_read_byte(rtlpriv, REG_RXDMA_CONTROL);
+			rtl_write_byte(rtlpriv, REG_RXDMA_CONTROL,
+				       (tmp & (~BIT(2))));
+		}
+		rtl_write_byte(rtlpriv, REG_PCIE_CTRL_REG + 1,
+			       backup_pcie_dma_pause);
+	}
+
+	/* 9. lock system register
+	 *	write 0xCC bit[2] = 1'b0 */
+	tmp = rtl_read_byte(rtlpriv, REG_PMC_DBG_CTRL2);
+	tmp &= ~(BIT(2));
+	rtl_write_byte(rtlpriv, REG_PMC_DBG_CTRL2, tmp);
+}
+
+
+
 int rtl92ee_hw_init(struct ieee80211_hw *hw)
 {
 	struct rtl_priv *rtlpriv = rtl_priv(hw);
@@ -1183,6 +1313,13 @@ int rtl92ee_hw_init(struct ieee80211_hw *hw)
 	} else {
 		rtlhal->mac_func_enable = false;
 		rtlhal->fw_ps_state = FW_PS_STATE_ALL_ON_92E;
+	}
+
+	if (_rtl8192ee_check_pcie_dma_hang(rtlpriv)) {
+		RT_TRACE(rtlpriv, COMP_INIT , DBG_DMESG, "92ee dma hang!\n");
+		_rtl8192ee_reset_pcie_interface_dma(rtlpriv,
+						    rtlhal->mac_func_enable);
+		rtlhal->mac_func_enable = false;
 	}
 
 	rtstatus = _rtl92ee_init_mac(hw);
@@ -1994,7 +2131,7 @@ static void _rtl92ee_read_txpower_info_from_hwpg(struct ieee80211_hw *hw,
 	}
 
 	efu->thermalmeter[0] = efu->eeprom_thermalmeter;
-	RTPRINT(rtlpriv, FINIT, INIT_TxPower,
+	RTPRINT(rtlpriv, FINIT, INIT_TXPOWER,
 		"thermalmeter = 0x%x\n", efu->eeprom_thermalmeter);
 
 	if (!autoload_fail) {
@@ -2005,7 +2142,7 @@ static void _rtl92ee_read_txpower_info_from_hwpg(struct ieee80211_hw *hw,
 	} else {
 		efu->eeprom_regulatory = 0;
 	}
-	RTPRINT(rtlpriv, FINIT, INIT_TxPower,
+	RTPRINT(rtlpriv, FINIT, INIT_TXPOWER,
 		"eeprom_regulatory = 0x%x\n", efu->eeprom_regulatory);
 }
 
@@ -2015,7 +2152,7 @@ static void _rtl92ee_read_adapter_info(struct ieee80211_hw *hw)
 	struct rtl_efuse *rtlefuse = rtl_efuse(rtl_priv(hw));
 	struct rtl_hal *rtlhal = rtl_hal(rtl_priv(hw));
 	u16 i, usvalue;
-	u8 hwinfo[HWSET_MAX_SIZE];
+	u8 hwinfo[HWSET_MAX_SIZE] = {0};
 	u16 eeprom_id;
 
 	if (rtlefuse->epromtype == EEPROM_BOOT_EFUSE) {
@@ -2112,7 +2249,7 @@ static void _rtl92ee_read_adapter_info(struct ieee80211_hw *hw)
 			if (rtlefuse->eeprom_did == 0x818B) {
 				if ((rtlefuse->eeprom_svid == 0x10EC) &&
 				    (rtlefuse->eeprom_smid == 0x001B))
-					rtlhal->oem_id = RT_CID_819x_Lenovo;
+					rtlhal->oem_id = RT_CID_819X_LENOVO;
 			} else {
 				rtlhal->oem_id = RT_CID_DEFAULT;
 			}
@@ -2321,6 +2458,10 @@ static void rtl92ee_update_hal_rate_mask(struct ieee80211_hw *hw,
 	ratr_index = _rtl92ee_mrate_idx_to_arfr_id(hw, ratr_index);
 	sta_entry->ratr_index = ratr_index;
 
+#if 0
+	/*troy add improve ping performance*/
+	ratr_bitmap = ratr_bitmap & 0x00;
+#endif
 	RT_TRACE(rtlpriv, COMP_RATR, DBG_DMESG,
 		 "ratr_bitmap :%x\n", ratr_bitmap);
 	*(u32 *) &rate_mask = (ratr_bitmap & 0x0fffffff) |
@@ -2370,132 +2511,6 @@ bool rtl92ee_gpio_radio_on_off_checking(struct ieee80211_hw *hw, u8 *valid)
 {
 	*valid = 1;
 	return true;
-}
-
-void rtl92ee_set_key(struct ieee80211_hw *hw, u32 key_index,
-		     u8 *p_macaddr, bool is_group, u8 enc_algo,
-		     bool is_wepkey, bool clear_all)
-{
-	struct rtl_priv *rtlpriv = rtl_priv(hw);
-	struct rtl_mac *mac = rtl_mac(rtl_priv(hw));
-	struct rtl_efuse *rtlefuse = rtl_efuse(rtl_priv(hw));
-	u8 *macaddr = p_macaddr;
-	u32 entry_id = 0;
-	bool is_pairwise = false;
-
-	static u8 cam_const_addr[4][6] = {
-		{0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
-		{0x00, 0x00, 0x00, 0x00, 0x00, 0x01},
-		{0x00, 0x00, 0x00, 0x00, 0x00, 0x02},
-		{0x00, 0x00, 0x00, 0x00, 0x00, 0x03}
-	};
-	static u8 cam_const_broad[] = {
-		0xff, 0xff, 0xff, 0xff, 0xff, 0xff
-	};
-
-	if (clear_all) {
-		u8 idx = 0;
-		u8 cam_offset = 0;
-		u8 clear_number = 5;
-
-		RT_TRACE(rtlpriv, COMP_SEC, DBG_DMESG, "clear_all\n");
-
-		for (idx = 0; idx < clear_number; idx++) {
-			rtl_cam_mark_invalid(hw, cam_offset + idx);
-			rtl_cam_empty_entry(hw, cam_offset + idx);
-
-			if (idx < 5) {
-				memset(rtlpriv->sec.key_buf[idx], 0,
-				       MAX_KEY_LEN);
-				rtlpriv->sec.key_len[idx] = 0;
-			}
-		}
-
-	} else {
-		switch (enc_algo) {
-		case WEP40_ENCRYPTION:
-			enc_algo = CAM_WEP40;
-			break;
-		case WEP104_ENCRYPTION:
-			enc_algo = CAM_WEP104;
-			break;
-		case TKIP_ENCRYPTION:
-			enc_algo = CAM_TKIP;
-			break;
-		case AESCCMP_ENCRYPTION:
-			enc_algo = CAM_AES;
-			break;
-		default:
-			RT_TRACE(rtlpriv, COMP_ERR, DBG_EMERG,
-				 "switch case not process\n");
-			enc_algo = CAM_TKIP;
-			break;
-		}
-
-		if (is_wepkey || rtlpriv->sec.use_defaultkey) {
-			macaddr = cam_const_addr[key_index];
-			entry_id = key_index;
-		} else {
-			if (is_group) {
-				macaddr = cam_const_broad;
-				entry_id = key_index;
-			} else {
-				if (mac->opmode == NL80211_IFTYPE_AP ||
-				    mac->opmode == NL80211_IFTYPE_MESH_POINT) {
-					entry_id = rtl_cam_get_free_entry(hw,
-								     p_macaddr);
-					if (entry_id >=  TOTAL_CAM_ENTRY) {
-						RT_TRACE(rtlpriv, COMP_SEC, DBG_EMERG,
-							 "Can not find free hw security cam entry\n");
-						return;
-					}
-				} else {
-					entry_id = CAM_PAIRWISE_KEY_POSITION;
-				}
-
-				key_index = PAIRWISE_KEYIDX;
-				is_pairwise = true;
-			}
-		}
-
-		if (rtlpriv->sec.key_len[key_index] == 0) {
-			RT_TRACE(rtlpriv, COMP_SEC, DBG_DMESG,
-				 "delete one entry, entry_id is %d\n",
-				 entry_id);
-			if (mac->opmode == NL80211_IFTYPE_AP ||
-			    mac->opmode == NL80211_IFTYPE_MESH_POINT)
-				rtl_cam_del_entry(hw, p_macaddr);
-			rtl_cam_delete_one_entry(hw, p_macaddr, entry_id);
-		} else {
-			RT_TRACE(rtlpriv, COMP_SEC, DBG_DMESG, "add one entry\n");
-			if (is_pairwise) {
-				RT_TRACE(rtlpriv, COMP_SEC, DBG_DMESG,
-					 "set Pairwiase key\n");
-
-				rtl_cam_add_one_entry(hw, macaddr, key_index,
-					       entry_id, enc_algo,
-					       CAM_CONFIG_NO_USEDK,
-					       rtlpriv->sec.key_buf[key_index]);
-			} else {
-				RT_TRACE(rtlpriv, COMP_SEC, DBG_DMESG,
-					 "set group key\n");
-
-				if (mac->opmode == NL80211_IFTYPE_ADHOC) {
-					rtl_cam_add_one_entry(hw,
-						rtlefuse->dev_addr,
-						PAIRWISE_KEYIDX,
-						CAM_PAIRWISE_KEY_POSITION,
-						enc_algo, CAM_CONFIG_NO_USEDK,
-						rtlpriv->sec.key_buf[entry_id]);
-				}
-
-				rtl_cam_add_one_entry(hw, macaddr, key_index,
-						entry_id, enc_algo,
-						CAM_CONFIG_NO_USEDK,
-						rtlpriv->sec.key_buf[entry_id]);
-			}
-		}
-	}
 }
 
 void rtl92ee_read_bt_coexist_info_from_hwpg(struct ieee80211_hw *hw,

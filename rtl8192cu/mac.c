@@ -40,6 +40,7 @@
 #include "dm.h"
 #include "mac.h"
 #include "trx.h"
+#include "../rtl8192c/fw_common.h"
 #include "../rtl8192c/phy_common.h"
 
 #include <linux/module.h>
@@ -228,139 +229,6 @@ bool rtl92c_init_llt_table(struct ieee80211_hw *hw, u32 boundary)
 	}
 	return rst;
 }
-void rtl92c_set_key(struct ieee80211_hw *hw, u32 key_index,
-		     u8 *p_macaddr, bool is_group, u8 enc_algo,
-		     bool is_wepkey, bool clear_all)
-{
-	struct rtl_priv *rtlpriv = rtl_priv(hw);
-	struct rtl_mac *mac = rtl_mac(rtl_priv(hw));
-	struct rtl_efuse *rtlefuse = rtl_efuse(rtl_priv(hw));
-	u8 *macaddr = p_macaddr;
-	u32 entry_id = 0;
-	bool is_pairwise = false;
-	static u8 cam_const_addr[4][6] = {
-		{0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
-		{0x00, 0x00, 0x00, 0x00, 0x00, 0x01},
-		{0x00, 0x00, 0x00, 0x00, 0x00, 0x02},
-		{0x00, 0x00, 0x00, 0x00, 0x00, 0x03}
-	};
-	static u8 cam_const_broad[] = {
-		0xff, 0xff, 0xff, 0xff, 0xff, 0xff
-	};
-
-	if (clear_all) {
-		u8 idx = 0;
-		u8 cam_offset = 0;
-		u8 clear_number = 5;
-
-		RT_TRACE(rtlpriv, COMP_SEC, DBG_DMESG, "clear_all\n");
-		for (idx = 0; idx < clear_number; idx++) {
-			rtl_cam_mark_invalid(hw, cam_offset + idx);
-			rtl_cam_empty_entry(hw, cam_offset + idx);
-			if (idx < 5) {
-				memset(rtlpriv->sec.key_buf[idx], 0,
-				       MAX_KEY_LEN);
-				rtlpriv->sec.key_len[idx] = 0;
-			}
-		}
-	} else {
-		switch (enc_algo) {
-		case WEP40_ENCRYPTION:
-			enc_algo = CAM_WEP40;
-			break;
-		case WEP104_ENCRYPTION:
-			enc_algo = CAM_WEP104;
-			break;
-		case TKIP_ENCRYPTION:
-			enc_algo = CAM_TKIP;
-			break;
-		case AESCCMP_ENCRYPTION:
-			enc_algo = CAM_AES;
-			break;
-		default:
-			RT_TRACE(rtlpriv, COMP_ERR, DBG_EMERG,
-				 "illegal switch case\n");
-			enc_algo = CAM_TKIP;
-			break;
-		}
-		if (is_wepkey || rtlpriv->sec.use_defaultkey) {
-			macaddr = cam_const_addr[key_index];
-			entry_id = key_index;
-		} else {
-			if (is_group) {
-				macaddr = cam_const_broad;
-				entry_id = key_index;
-			} else {
-				if (mac->opmode == NL80211_IFTYPE_AP ||
-				    mac->opmode == NL80211_IFTYPE_MESH_POINT) {
-					entry_id = rtl_cam_get_free_entry(hw,
-								 p_macaddr);
-					if (entry_id >=  TOTAL_CAM_ENTRY) {
-						RT_TRACE(rtlpriv, COMP_SEC,
-							 DBG_EMERG,
-							 "Can not find free hw security cam entry\n");
-						return;
-					}
-				} else {
-					entry_id = CAM_PAIRWISE_KEY_POSITION;
-				}
-
-				key_index = PAIRWISE_KEYIDX;
-				is_pairwise = true;
-			}
-		}
-		if (rtlpriv->sec.key_len[key_index] == 0) {
-			RT_TRACE(rtlpriv, COMP_SEC, DBG_DMESG,
-				 "delete one entry\n");
-			if (mac->opmode == NL80211_IFTYPE_AP ||
-			    mac->opmode == NL80211_IFTYPE_MESH_POINT)
-				rtl_cam_del_entry(hw, p_macaddr);
-			rtl_cam_delete_one_entry(hw, p_macaddr, entry_id);
-		} else {
-			RT_TRACE(rtlpriv, COMP_SEC, DBG_LOUD,
-				 "The insert KEY length is %d\n",
-				 rtlpriv->sec.key_len[PAIRWISE_KEYIDX]);
-			RT_TRACE(rtlpriv, COMP_SEC, DBG_LOUD,
-				 "The insert KEY is %x %x\n",
-				 rtlpriv->sec.key_buf[0][0],
-				 rtlpriv->sec.key_buf[0][1]);
-			RT_TRACE(rtlpriv, COMP_SEC, DBG_DMESG,
-				 "add one entry\n");
-			if (is_pairwise) {
-				RT_PRINT_DATA(rtlpriv, COMP_SEC, DBG_LOUD,
-					      "Pairwise Key content",
-					      rtlpriv->sec.pairwise_key,
-					      rtlpriv->sec.
-					      key_len[PAIRWISE_KEYIDX]);
-				RT_TRACE(rtlpriv, COMP_SEC, DBG_DMESG,
-					 "set Pairwise key\n");
-
-				rtl_cam_add_one_entry(hw, macaddr, key_index,
-						entry_id, enc_algo,
-						CAM_CONFIG_NO_USEDK,
-						rtlpriv->sec.
-						key_buf[key_index]);
-			} else {
-				RT_TRACE(rtlpriv, COMP_SEC, DBG_DMESG,
-					 "set group key\n");
-				if (mac->opmode == NL80211_IFTYPE_ADHOC) {
-					rtl_cam_add_one_entry(hw,
-						rtlefuse->dev_addr,
-						PAIRWISE_KEYIDX,
-						CAM_PAIRWISE_KEY_POSITION,
-						enc_algo,
-						CAM_CONFIG_NO_USEDK,
-						rtlpriv->sec.key_buf
-						[entry_id]);
-				}
-				rtl_cam_add_one_entry(hw, macaddr, key_index,
-						entry_id, enc_algo,
-						CAM_CONFIG_NO_USEDK,
-						rtlpriv->sec.key_buf[entry_id]);
-			}
-		}
-	}
-}
 
 u32 rtl92c_get_txdma_status(struct ieee80211_hw *hw)
 {
@@ -372,21 +240,12 @@ u32 rtl92c_get_txdma_status(struct ieee80211_hw *hw)
 void rtl92c_enable_interrupt(struct ieee80211_hw *hw)
 {
 	struct rtl_priv *rtlpriv = rtl_priv(hw);
-	struct rtl_hal *rtlhal = rtl_hal(rtl_priv(hw));
-	struct rtl_pci *rtlpci = rtl_pcidev(rtl_pcipriv(hw));
 	struct rtl_usb *rtlusb = rtl_usbdev(rtl_usbpriv(hw));
 
-	if (IS_HARDWARE_TYPE_8192CE(rtlhal)) {
-		rtl_write_dword(rtlpriv, REG_HIMR, rtlpci->irq_mask[0] &
-				0xFFFFFFFF);
-		rtl_write_dword(rtlpriv, REG_HIMRE, rtlpci->irq_mask[1] &
-				0xFFFFFFFF);
-	} else {
-		rtl_write_dword(rtlpriv, REG_HIMR, rtlusb->irq_mask[0] &
-				0xFFFFFFFF);
-		rtl_write_dword(rtlpriv, REG_HIMRE, rtlusb->irq_mask[1] &
-				0xFFFFFFFF);
-	}
+	rtl_write_dword(rtlpriv, REG_HIMR, rtlusb->irq_mask[0] &
+			0xFFFFFFFF);
+	rtl_write_dword(rtlpriv, REG_HIMRE, rtlusb->irq_mask[1] &
+			0xFFFFFFFF);
 }
 
 void rtl92c_init_interrupt(struct ieee80211_hw *hw)
@@ -541,8 +400,8 @@ static void rtl92c_set_cck_sifs(struct ieee80211_hw *hw, u8 trx_sifs,
 {
 	struct rtl_priv *rtlpriv = rtl_priv(hw);
 
-	rtl_write_byte(rtlpriv, REG_SIFS_CTX, trx_sifs);
-	rtl_write_byte(rtlpriv, (REG_SIFS_CTX + 1), ctx_sifs);
+	rtl_write_byte(rtlpriv, REG_SIFS_CCK, trx_sifs);
+	rtl_write_byte(rtlpriv, (REG_SIFS_CCK + 1), ctx_sifs);
 }
 
 static void rtl92c_set_ofdm_sifs(struct ieee80211_hw *hw, u8 trx_sifs,
@@ -550,8 +409,8 @@ static void rtl92c_set_ofdm_sifs(struct ieee80211_hw *hw, u8 trx_sifs,
 {
 	struct rtl_priv *rtlpriv = rtl_priv(hw);
 
-	rtl_write_byte(rtlpriv, REG_SIFS_TRX, trx_sifs);
-	rtl_write_byte(rtlpriv, (REG_SIFS_TRX + 1), ctx_sifs);
+	rtl_write_byte(rtlpriv, REG_SIFS_OFDM, trx_sifs);
+	rtl_write_byte(rtlpriv, (REG_SIFS_OFDM + 1), ctx_sifs);
 }
 
 void rtl92c_init_edca_param(struct ieee80211_hw *hw,
@@ -585,8 +444,8 @@ void rtl92c_init_edca(struct ieee80211_hw *hw)
 	rtl92c_set_cck_sifs(hw, 0xa, 0xa);
 	rtl92c_set_ofdm_sifs(hw, 0xe, 0xe);
 	/* Set CCK/OFDM SIFS to be 10us. */
-	rtl_write_word(rtlpriv, REG_SIFS_CTX, 0x0a0a);
-	rtl_write_word(rtlpriv, REG_SIFS_TRX, 0x1010);
+	rtl_write_word(rtlpriv, REG_SIFS_CCK, 0x0a0a);
+	rtl_write_word(rtlpriv, REG_SIFS_OFDM, 0x1010);
 	rtl_write_word(rtlpriv, REG_PROT_MODE_CTRL, 0x0204);
 	rtl_write_dword(rtlpriv, REG_BAR_MODE_CTRL, 0x014004);
 	/* TXOP */
@@ -787,7 +646,7 @@ static void _rtl92c_query_rxphystatus(struct ieee80211_hw *hw,
 	bool is_cck_rate;
 	u8 *pdesc = (u8 *)p_desc;
 
-	is_cck_rate = RX_HAL_IS_CCK_RATE(p_desc);
+	is_cck_rate = RX_HAL_IS_CCK_RATE(p_desc->rxmcs);
 	pstats->packet_matchbssid = packet_match_bssid;
 	pstats->packet_toself = packet_toself;
 	pstats->packet_beacon = packet_beacon;
@@ -880,8 +739,8 @@ static void _rtl92c_query_rxphystatus(struct ieee80211_hw *hw,
 		pstats->rxpower = rx_pwr_all;
 		pstats->recvsignalpower = rx_pwr_all;
 		if (GET_RX_DESC_RX_MCS(pdesc) &&
-		    GET_RX_DESC_RX_MCS(pdesc) >= DESC92_RATEMCS8 &&
-		    GET_RX_DESC_RX_MCS(pdesc) <= DESC92_RATEMCS15)
+		    GET_RX_DESC_RX_MCS(pdesc) >= DESC_RATEMCS8 &&
+		    GET_RX_DESC_RX_MCS(pdesc) <= DESC_RATEMCS15)
 			max_spatial_stream = 2;
 		else
 			max_spatial_stream = 1;
@@ -926,7 +785,6 @@ void rtl92c_translate_rx_signal_stuff(struct ieee80211_hw *hw,
 	cpu_fc = le16_to_cpu(fc);
 	type = WLAN_FC_GET_TYPE(fc);
 	praddr = hdr->addr1;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 5, 0))
 	packet_matchbssid =
 	    ((IEEE80211_FTYPE_CTL != type) &&
 	     ether_addr_equal(mac->bssid,
@@ -934,19 +792,9 @@ void rtl92c_translate_rx_signal_stuff(struct ieee80211_hw *hw,
 			      (cpu_fc & IEEE80211_FCTL_FROMDS) ? hdr->addr2 :
 			      hdr->addr3) &&
 	     (!pstats->hwerror) && (!pstats->crc) && (!pstats->icv));
+
 	packet_toself = packet_matchbssid &&
 	    ether_addr_equal(praddr, rtlefuse->dev_addr);
-#else
-	packet_matchbssid =
-	    ((IEEE80211_FTYPE_CTL != type) &&
-	     !compare_ether_addr(mac->bssid,
-			      (cpu_fc & IEEE80211_FCTL_TODS) ? hdr->addr1 :
-			      (cpu_fc & IEEE80211_FCTL_FROMDS) ? hdr->addr2 :
-			      hdr->addr3) &&
-	     (!pstats->hwerror) && (!pstats->crc) && (!pstats->icv));
-	packet_toself = packet_matchbssid &&
-	    !compare_ether_addr(praddr, rtlefuse->dev_addr);
-#endif
 	if (ieee80211_is_beacon(fc))
 		packet_beacon = true;
 	_rtl92c_query_rxphystatus(hw, pstats, pdesc, p_drvinfo,

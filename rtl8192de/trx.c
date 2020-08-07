@@ -35,6 +35,8 @@
 #include "trx.h"
 #include "led.h"
 
+#include <linux/vermagic.h>
+
 static u8 _rtl92de_map_hwqueue_to_fwqueue(struct sk_buff *skb, u8 hw_queue)
 {
 	__le16 fc = rtl_get_fc(skb);
@@ -53,20 +55,20 @@ static u8 _rtl92de_map_hwqueue_to_fwqueue(struct sk_buff *skb, u8 hw_queue)
  *
  * B/G rate:
  * (rx_status->flag & RX_FLAG_HT) = 0,
- * DESC92C_RATE1M-->DESC92C_RATE54M ==> idx is 0-->11,
+ * DESC_RATE1M-->DESC_RATE54M ==> idx is 0-->11,
  *
  * N rate:
  * (rx_status->flag & RX_FLAG_HT) = 1,
- * DESC92C_RATEMCS0-->DESC92C_RATEMCS15 ==> idx is 0-->15
+ * DESC_RATEMCS0-->DESC_RATEMCS15 ==> idx is 0-->15
  *
  * 5G band:rx_status->band == IEEE80211_BAND_5GHZ
  * A rate:
  * (rx_status->flag & RX_FLAG_HT) = 0,
- * DESC92C_RATE6M-->DESC92C_RATE54M ==> idx is 0-->7,
+ * DESC_RATE6M-->DESC_RATE54M ==> idx is 0-->7,
  *
  * N rate:
  * (rx_status->flag & RX_FLAG_HT) = 1,
- * DESC92C_RATEMCS0-->DESC92C_RATEMCS15 ==> idx is 0-->15
+ * DESC_RATEMCS0-->DESC_RATEMCS15 ==> idx is 0-->15
  */
 static int _rtl92de_rate_mapping(struct ieee80211_hw *hw,
 	bool isht, u8 desc_rate)
@@ -459,7 +461,9 @@ bool rtl92de_rx_query_desc(struct ieee80211_hw *hw,	struct rtl_stats *status,
 				rtl_get_hdr(skb));
 				return false;
 		}
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,15,0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,15,0)) ||	\
+    ((LINUX_VERSION_CODE >= KERNEL_VERSION(3,13,0)) &&	\
+    defined(UTS_UBUNTU_RELEASE_ABI))
 		if ((!_ieee80211_is_robust_mgmt_frame(hdr)) &&
 #else
 		if ((!ieee80211_is_robust_mgmt_frame(hdr)) &&
