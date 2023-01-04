@@ -42,6 +42,7 @@
 #include "trx.h"
 #include "led.h"
 #include "hw.h"
+#include "../rtl8192c/fw_common.h"
 #include <linux/module.h>
 
 MODULE_AUTHOR("Georgia		<georgia@realtek.com>");
@@ -58,34 +59,40 @@ static int rtl92cu_init_sw_vars(struct ieee80211_hw *hw)
 {
 	struct rtl_priv *rtlpriv = rtl_priv(hw);
 	int err;
+	char *fw_name;
 
 	rtlpriv->dm.dm_initialgain_enable = true;
 	rtlpriv->dm.dm_flag = 0;
 	rtlpriv->dm.disable_framebursting = false;
 	rtlpriv->dm.thermalvalue = 0;
 	rtlpriv->dbg.global_debuglevel = rtlpriv->cfg->mod_params->debug;
+	rtlpriv->cfg->mod_params->sw_crypto =
+		rtlpriv->cfg->mod_params->sw_crypto;
+
+	/*just 2.4G band*/
+	rtlpriv->rtlhal.current_bandtype = BAND_ON_2_4G;
+	rtlpriv->rtlhal.bandset = BAND_ON_2_4G;
 
 	/* for firmware buf */
 	rtlpriv->rtlhal.pfirmware = vzalloc(0x4000);
 	if (!rtlpriv->rtlhal.pfirmware) {
-		RT_TRACE(rtlpriv, COMP_ERR, DBG_EMERG,
-			 "Can't alloc buffer for fw\n");
+		pr_err("Can't alloc buffer for fw\n");
 		return 1;
 	}
 	if (IS_VENDOR_UMC_A_CUT(rtlpriv->rtlhal.version) &&
 	    !IS_92C_SERIAL(rtlpriv->rtlhal.version)) {
-		rtlpriv->cfg->fw_name = "rtlwifi/rtl8192cufw_A.bin";
-	} else if (IS_81xxC_VENDOR_UMC_B_CUT(rtlpriv->rtlhal.version)) {
-		rtlpriv->cfg->fw_name = "rtlwifi/rtl8192cufw_B.bin";
+		fw_name = "rtlwifi/rtl8192cufw_A.bin";
+	} else if (IS_81XXC_VENDOR_UMC_B_CUT(rtlpriv->rtlhal.version)) {
+		fw_name = "rtlwifi/rtl8192cufw_B.bin";
 	} else {
-		rtlpriv->cfg->fw_name = "rtlwifi/rtl8192cufw_TMSC.bin";
+		fw_name = "rtlwifi/rtl8192cufw_TMSC.bin";
 	}
 	/* provide name of alternative file */
 	rtlpriv->cfg->alt_fw_name = "rtlwifi/rtl8192cufw.bin";
-	pr_info("Loading firmware %s\n", rtlpriv->cfg->fw_name);
+	pr_info("Loading firmware %s\n", fw_name);
 	rtlpriv->max_fw_size = 0x4000;
 	err = request_firmware_nowait(THIS_MODULE, 1,
-				      rtlpriv->cfg->fw_name, rtlpriv->io.dev,
+				      fw_name, rtlpriv->io.dev,
 				      GFP_KERNEL, hw, rtl_fw_cb);
 	return err;
 }
@@ -98,6 +105,12 @@ static void rtl92cu_deinit_sw_vars(struct ieee80211_hw *hw)
 		vfree(rtlpriv->rtlhal.pfirmware);
 		rtlpriv->rtlhal.pfirmware = NULL;
 	}
+}
+
+/* get bt coexist status */
+static bool rtl92cu_get_btc_status(void)
+{
+	return false;
 }
 
 static struct rtl_hal_ops rtl8192cu_hal_ops = {
@@ -121,7 +134,6 @@ static struct rtl_hal_ops rtl8192cu_hal_ops = {
 	.fill_tx_desc = rtl92cu_tx_fill_desc,
 	.fill_fake_txdesc = rtl92cu_fill_fake_txdesc,
 	.fill_tx_cmddesc = rtl92cu_tx_fill_cmddesc,
-	.cmd_send_packet = rtl92cu_cmd_send_packet,
 	.query_rx_desc = rtl92cu_rx_query_desc,
 	.set_channel_access = rtl92cu_update_channel_access_setting,
 	.radio_onoff_checking = rtl92cu_gpio_radio_on_off_checking,
@@ -148,11 +160,12 @@ static struct rtl_hal_ops rtl8192cu_hal_ops = {
 	.phy_set_bw_mode_callback = rtl92cu_phy_set_bw_mode_callback,
 	.dm_dynamic_txpower = rtl92cu_dm_dynamic_txpower,
 	.fill_h2c_cmd = rtl92c_fill_h2c_cmd,
+	.get_btc_status = rtl92cu_get_btc_status,
 };
 
 static struct rtl_mod_params rtl92cu_mod_params = {
 	.sw_crypto = 0,
-	.debug = DBG_EMERG,
+	.debug = 0,
 };
 
 module_param_named(swenc, rtl92cu_mod_params.sw_crypto, bool, 0444);
@@ -178,7 +191,6 @@ static struct rtl_hal_usbint_cfg rtl92cu_interface_cfg = {
 
 static struct rtl_hal_cfg rtl92cu_hal_cfg = {
 	.name = "rtl92c_usb",
-	.fw_name = "rtlwifi/rtl8192cufw.bin",
 	.ops = &rtl8192cu_hal_ops,
 	.mod_params = &rtl92cu_mod_params,
 	.usb_interface_cfg = &rtl92cu_interface_cfg,
@@ -234,7 +246,7 @@ static struct rtl_hal_cfg rtl92cu_hal_cfg = {
 
 	.maps[RTL_IMR_TXFOVW] = IMR_TXFOVW,
 	.maps[RTL_IMR_PSTIMEOUT] = IMR_PSTIMEOUT,
-	.maps[RTL_IMR_BcnInt] = IMR_BCNINT,
+	.maps[RTL_IMR_BCNINT] = IMR_BCNINT,
 	.maps[RTL_IMR_RXFOVW] = IMR_RXFOVW,
 	.maps[RTL_IMR_RDU] = IMR_RDU,
 	.maps[RTL_IMR_ATIMEND] = IMR_ATIMEND,
@@ -250,20 +262,20 @@ static struct rtl_hal_cfg rtl92cu_hal_cfg = {
 	.maps[RTL_IMR_ROK] = IMR_ROK,
 	.maps[RTL_IBSS_INT_MASKS] = (IMR_BCNINT | IMR_TBDOK | IMR_TBDER),
 
-	.maps[RTL_RC_CCK_RATE1M] = DESC92_RATE1M,
-	.maps[RTL_RC_CCK_RATE2M] = DESC92_RATE2M,
-	.maps[RTL_RC_CCK_RATE5_5M] = DESC92_RATE5_5M,
-	.maps[RTL_RC_CCK_RATE11M] = DESC92_RATE11M,
-	.maps[RTL_RC_OFDM_RATE6M] = DESC92_RATE6M,
-	.maps[RTL_RC_OFDM_RATE9M] = DESC92_RATE9M,
-	.maps[RTL_RC_OFDM_RATE12M] = DESC92_RATE12M,
-	.maps[RTL_RC_OFDM_RATE18M] = DESC92_RATE18M,
-	.maps[RTL_RC_OFDM_RATE24M] = DESC92_RATE24M,
-	.maps[RTL_RC_OFDM_RATE36M] = DESC92_RATE36M,
-	.maps[RTL_RC_OFDM_RATE48M] = DESC92_RATE48M,
-	.maps[RTL_RC_OFDM_RATE54M] = DESC92_RATE54M,
-	.maps[RTL_RC_HT_RATEMCS7] = DESC92_RATEMCS7,
-	.maps[RTL_RC_HT_RATEMCS15] = DESC92_RATEMCS15,
+	.maps[RTL_RC_CCK_RATE1M] = DESC_RATE1M,
+	.maps[RTL_RC_CCK_RATE2M] = DESC_RATE2M,
+	.maps[RTL_RC_CCK_RATE5_5M] = DESC_RATE5_5M,
+	.maps[RTL_RC_CCK_RATE11M] = DESC_RATE11M,
+	.maps[RTL_RC_OFDM_RATE6M] = DESC_RATE6M,
+	.maps[RTL_RC_OFDM_RATE9M] = DESC_RATE9M,
+	.maps[RTL_RC_OFDM_RATE12M] = DESC_RATE12M,
+	.maps[RTL_RC_OFDM_RATE18M] = DESC_RATE18M,
+	.maps[RTL_RC_OFDM_RATE24M] = DESC_RATE24M,
+	.maps[RTL_RC_OFDM_RATE36M] = DESC_RATE36M,
+	.maps[RTL_RC_OFDM_RATE48M] = DESC_RATE48M,
+	.maps[RTL_RC_OFDM_RATE54M] = DESC_RATE54M,
+	.maps[RTL_RC_HT_RATEMCS7] = DESC_RATEMCS7,
+	.maps[RTL_RC_HT_RATEMCS15] = DESC_RATEMCS15,
 };
 
 #define USB_VENDER_ID_REALTEK		0x0bda
@@ -314,6 +326,8 @@ static struct usb_device_id rtl8192c_usb_ids[] = {
 	{RTL_USB_DEVICE(0x07b8, 0x8188, rtl92cu_hal_cfg)}, /*Abocom - Abocom*/
 	{RTL_USB_DEVICE(0x07b8, 0x8189, rtl92cu_hal_cfg)}, /*Funai - Abocom*/
 	{RTL_USB_DEVICE(0x0846, 0x9041, rtl92cu_hal_cfg)}, /*NetGear WNA1000M*/
+	{RTL_USB_DEVICE(0x0846, 0x9043, rtl92cu_hal_cfg)}, /*NG WNA1000Mv2*/
+	{RTL_USB_DEVICE(0x0b05, 0x17ba, rtl92cu_hal_cfg)}, /*ASUS-Edimax*/
 	{RTL_USB_DEVICE(0x0bda, 0x5088, rtl92cu_hal_cfg)}, /*Thinkware-CC&C*/
 	{RTL_USB_DEVICE(0x0df6, 0x0052, rtl92cu_hal_cfg)}, /*Sitecom - Edimax*/
 	{RTL_USB_DEVICE(0x0df6, 0x005c, rtl92cu_hal_cfg)}, /*Sitecom - Edimax*/
@@ -370,6 +384,7 @@ static struct usb_device_id rtl8192c_usb_ids[] = {
 	{RTL_USB_DEVICE(0x2001, 0x3307, rtl92cu_hal_cfg)}, /*D-Link-Cameo*/
 	{RTL_USB_DEVICE(0x2001, 0x3309, rtl92cu_hal_cfg)}, /*D-Link-Alpha*/
 	{RTL_USB_DEVICE(0x2001, 0x330a, rtl92cu_hal_cfg)}, /*D-Link-Alpha*/
+	{RTL_USB_DEVICE(0x2001, 0x330d, rtl92cu_hal_cfg)}, /*D-Link DWA-131 */
 	{RTL_USB_DEVICE(0x2019, 0xab2b, rtl92cu_hal_cfg)}, /*Planex -Abocom*/
 	{RTL_USB_DEVICE(0x20f4, 0x624d, rtl92cu_hal_cfg)}, /*TRENDNet*/
 	{RTL_USB_DEVICE(0x2357, 0x0100, rtl92cu_hal_cfg)}, /*TP-Link WN8200ND*/
@@ -396,24 +411,7 @@ static struct usb_driver rtl8192cu_driver = {
 	/* .resume = rtl_usb_resume, */
 	/* .reset_resume = rtl8192c_resume, */
 #endif /* CONFIG_PM */
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 5, 0))
 	.disable_hub_initiated_lpm = 1,
-#endif
 };
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0))
 module_usb_driver(rtl8192cu_driver);
-#else
-static int __init rtl8192cu_init(void)
-{
-       return usb_register(&rtl8192cu_driver);
-}
-
-static void __exit rtl8192cu_exit(void)
-{
-       usb_deregister(&rtl8192cu_driver);
-}
-
-module_init(rtl8192cu_init);
-module_exit(rtl8192cu_exit);
-#endif

@@ -17,6 +17,7 @@
 *.ko
 *.so
 *.so.dbg
+*.mod
 *.mod.c
 *.i
 *.lst
@@ -95,3 +96,7 @@ x509.genkey
 
 # Kconfig presets
 all.config
+
+# Driver backups
+backup_drivers.tar
+

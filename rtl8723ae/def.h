@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- * Copyright(c) 2009-2010  Realtek Corporation.
+ * Copyright(c) 2009-2012  Realtek Corporation.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of version 2 of the GNU General Public License as
@@ -10,10 +10,6 @@
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
  * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
  * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110, USA
  *
  * The full GNU General Public License is included in this distribution in the
  * file called LICENSE.
@@ -30,53 +26,12 @@
 #ifndef __RTL8723E_DEF_H__
 #define __RTL8723E_DEF_H__
 
-#define HAL_RETRY_LIMIT_INFRA				48
-#define HAL_RETRY_LIMIT_AP_ADHOC			7
-
-#define RESET_DELAY_8185					20
-
-#define RT_IBSS_INT_MASKS	(IMR_BCNINT | IMR_TBDOK | IMR_TBDER)
-#define RT_AC_INT_MASKS		(IMR_VIDOK | IMR_VODOK | IMR_BEDOK|IMR_BKDOK)
-
-#define NUM_OF_FIRMWARE_QUEUE				10
-#define NUM_OF_PAGES_IN_FW					0x100
-#define NUM_OF_PAGE_IN_FW_QUEUE_BK			0x07
-#define NUM_OF_PAGE_IN_FW_QUEUE_BE			0x07
-#define NUM_OF_PAGE_IN_FW_QUEUE_VI			0x07
-#define NUM_OF_PAGE_IN_FW_QUEUE_VO			0x07
-#define NUM_OF_PAGE_IN_FW_QUEUE_HCCA		0x0
-#define NUM_OF_PAGE_IN_FW_QUEUE_CMD			0x0
-#define NUM_OF_PAGE_IN_FW_QUEUE_MGNT		0x02
-#define NUM_OF_PAGE_IN_FW_QUEUE_HIGH		0x02
-#define NUM_OF_PAGE_IN_FW_QUEUE_BCN			0x2
-#define NUM_OF_PAGE_IN_FW_QUEUE_PUB			0xA1
-
-#define NUM_OF_PAGE_IN_FW_QUEUE_BK_DTM		0x026
-#define NUM_OF_PAGE_IN_FW_QUEUE_BE_DTM		0x048
-#define NUM_OF_PAGE_IN_FW_QUEUE_VI_DTM		0x048
-#define NUM_OF_PAGE_IN_FW_QUEUE_VO_DTM		0x026
-#define NUM_OF_PAGE_IN_FW_QUEUE_PUB_DTM		0x00
-
-#define MAX_LINES_HWCONFIG_TXT				1000
-#define MAX_BYTES_LINE_HWCONFIG_TXT			256
-
-#define SW_THREE_WIRE						0
-#define HW_THREE_WIRE						2
-
-#define BT_DEMO_BOARD						0
-#define BT_QA_BOARD							1
-#define BT_FPGA								2
-
 #define HAL_PRIME_CHNL_OFFSET_DONT_CARE		0
 #define HAL_PRIME_CHNL_OFFSET_LOWER			1
 #define HAL_PRIME_CHNL_OFFSET_UPPER			2
 
-#define MAX_H2C_QUEUE_NUM					10
-
 #define RX_MPDU_QUEUE						0
 #define RX_CMD_QUEUE						1
-#define RX_MAX_QUEUE						2
-#define AC2QUEUEID(_AC)						(_AC)
 
 #define	C2H_RX_CMD_HDR_LEN					8
 #define	GET_C2H_CMD_CMD_LEN(__prxhdr)		\
@@ -124,12 +79,6 @@
 #define E_CUT_VERSION		BIT(14)
 #define	RF_RL_ID		(BIT(31)|BIT(30)|BIT(29)|BIT(28))
 
-enum version_8723e {
-	VERSION_TEST_UMC_CHIP_8723 = 0x0081,
-	VERSION_NORMAL_UMC_CHIP_8723_1T1R_A_CUT = 0x0089,
-	VERSION_NORMAL_UMC_CHIP_8723_1T1R_B_CUT = 0x1089,
-};
-
 /* MASK */
 #define IC_TYPE_MASK		(BIT(0)|BIT(1)|BIT(2))
 #define CHIP_TYPE_MASK		BIT(3)
@@ -169,7 +118,7 @@ enum version_8723e {
 		B_CUT_VERSION) ? true : false) : false)
 #define IS_81xxC_VENDOR_UMC_B_CUT(version)	((IS_CHIP_VENDOR_UMC(version))\
 		? ((GET_CVID_CUT_VERSION(version) == \
-		B_CUT_VERSION) ? true : false):false)
+		B_CUT_VERSION) ? true : false) : false)
 
 enum rf_optype {
 	RF_OP_BY_SW_3WIRE = 0,
@@ -189,7 +138,7 @@ enum power_save_mode {
 	POWER_SAVE_MODE_SAVE,
 };
 
-enum power_polocy_config {
+enum power_policy_config {
 	POWERCFG_MAX_POWER_SAVINGS,
 	POWERCFG_GLOBAL_POWER_SAVINGS,
 	POWERCFG_LOCAL_POWER_SAVINGS,

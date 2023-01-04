@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- * Copyright(c) 2009-2010  Realtek Corporation.
+ * Copyright(c) 2009-2014  Realtek Corporation.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of version 2 of the GNU General Public License as
@@ -10,10 +10,6 @@
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
  * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
  * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110, USA
  *
  * The full GNU General Public License is included in this distribution in the
  * file called LICENSE.
@@ -26,9 +22,6 @@
  * Larry Finger <Larry.Finger@lwfinger.net>
  *
  *****************************************************************************/
-
-#include <linux/vmalloc.h>
-#include <linux/module.h>
 
 #include "../wifi.h"
 #include "../core.h"
@@ -46,6 +39,8 @@
 
 #include "../btcoexist/rtl_btc.h"
 
+#include <linux/vmalloc.h>
+#include <linux/module.h>
 
 static void rtl92ee_init_aspm_vars(struct ieee80211_hw *hw)
 {
@@ -54,7 +49,7 @@ static void rtl92ee_init_aspm_vars(struct ieee80211_hw *hw)
 	/*close ASPM for AMD defaultly */
 	rtlpci->const_amdpci_aspm = 0;
 
-	/*
+	/**
 	 * ASPM PS mode.
 	 * 0 - Disable ASPM,
 	 * 1 - Enable ASPM without Clock Req,
@@ -62,7 +57,7 @@ static void rtl92ee_init_aspm_vars(struct ieee80211_hw *hw)
 	 * 3 - Alwyas Enable ASPM with Clock Req,
 	 * 4 - Always Enable ASPM without Clock Req.
 	 * set defult to RTL8192CE:3 RTL8192E:2
-	 * */
+	 */
 	rtlpci->const_pci_aspm = 3;
 
 	/*Setting for PCI-E device */
@@ -71,7 +66,7 @@ static void rtl92ee_init_aspm_vars(struct ieee80211_hw *hw)
 	/*Setting for PCI-E bridge */
 	rtlpci->const_hostpci_aspm_setting = 0x02;
 
-	/*
+	/**
 	 * In Hw/Sw Radio Off situation.
 	 * 0 - Default,
 	 * 1 - From ASPM setting without low Mac Pwr,
@@ -81,7 +76,7 @@ static void rtl92ee_init_aspm_vars(struct ieee80211_hw *hw)
 	 */
 	rtlpci->const_hwsw_rfoff_d3 = 0;
 
-	/*
+	/**
 	 * This setting works for those device with
 	 * backdoor ASPM setting such as EPHY setting.
 	 * 0 - Not support ASPM,
@@ -93,9 +88,10 @@ static void rtl92ee_init_aspm_vars(struct ieee80211_hw *hw)
 
 int rtl92ee_init_sw_vars(struct ieee80211_hw *hw)
 {
-	int err = 0;
 	struct rtl_priv *rtlpriv = rtl_priv(hw);
 	struct rtl_pci *rtlpci = rtl_pcidev(rtl_pcipriv(hw));
+	int err = 0;
+	char *fw_name;
 
 	rtl92ee_bt_reg_init(hw);
 	rtlpci->msi_support = rtlpriv->cfg->mod_params->msi_support;
@@ -104,7 +100,6 @@ int rtl92ee_init_sw_vars(struct ieee80211_hw *hw)
 	rtlpriv->dm.dm_initialgain_enable = 1;
 	rtlpriv->dm.dm_flag = 0;
 	rtlpriv->dm.disable_framebursting = 0;
-	/*rtlpriv->dm.thermalvalue = 0;*/
 	rtlpci->transmit_config = CFENDFORM | BIT(15);
 
 	/*just 2.4G band*/
@@ -119,18 +114,13 @@ int rtl92ee_init_sw_vars(struct ieee80211_hw *hw)
 				  RCR_HTC_LOC_CTRL		|
 				  RCR_AMF			|
 				  RCR_ACF			|
-				  RCR_ADF			|
-				  RCR_AICV			|
 				  RCR_ACRC32			|
 				  RCR_AB			|
 				  RCR_AM			|
 				  RCR_APM			|
 				  0);
 
-	rtlpci->irq_mask[0] = (u32) (IMR_PSTIMEOUT		|
-				/*   IMR_TBDER			|
-				     IMR_TBDOK			|
-				     IMR_BCNDMAINT0		|*/
+	rtlpci->irq_mask[0] = (u32)(IMR_PSTIMEOUT		|
 				     IMR_C2HCMD			|
 				     IMR_HIGHDOK		|
 				     IMR_MGNTDOK		|
@@ -141,7 +131,7 @@ int rtl92ee_init_sw_vars(struct ieee80211_hw *hw)
 				     IMR_RDU			|
 				     IMR_ROK			|
 				     0);
-	rtlpci->irq_mask[1] = (u32) (IMR_RXFOVW | 0);
+	rtlpci->irq_mask[1] = (u32)(IMR_RXFOVW | 0);
 
 	/* for debug level */
 	rtlpriv->dbg.global_debuglevel = rtlpriv->cfg->mod_params->debug;
@@ -155,7 +145,8 @@ int rtl92ee_init_sw_vars(struct ieee80211_hw *hw)
 	rtlpriv->psc.reg_fwctrl_lps = 3;
 	rtlpriv->psc.reg_max_lps_awakeintvl = 5;
 	/* for ASPM, you can close aspm through
-	 * set const_support_pciaspm = 0 */
+	 * set const_support_pciaspm = 0
+	 */
 	rtl92ee_init_aspm_vars(hw);
 
 	if (rtlpriv->psc.reg_fwctrl_lps == 1)
@@ -171,26 +162,23 @@ int rtl92ee_init_sw_vars(struct ieee80211_hw *hw)
 	/*low power */
 	rtlpriv->psc.low_power_enable = false;
 
-
 	/* for firmware buf */
 	rtlpriv->rtlhal.pfirmware = vzalloc(0x8000);
 	if (!rtlpriv->rtlhal.pfirmware) {
-		RT_TRACE(rtlpriv, COMP_ERR, DBG_EMERG,
-			 "Can't alloc buffer for fw\n");
+		pr_err("Can't alloc buffer for fw\n");
 		return 1;
 	}
 
 	/* request fw */
-	rtlpriv->cfg->fw_name = "rtlwifi/rtl8192eefw.bin";
+	fw_name = "rtlwifi/rtl8192eefw.bin";
 
 	rtlpriv->max_fw_size = 0x8000;
-	pr_info("Using firmware %s\n", rtlpriv->cfg->fw_name);
-	err = request_firmware_nowait(THIS_MODULE, 1, rtlpriv->cfg->fw_name,
+	pr_info("Using firmware %s\n", fw_name);
+	err = request_firmware_nowait(THIS_MODULE, 1, fw_name,
 				      rtlpriv->io.dev, GFP_KERNEL, hw,
 				      rtl_fw_cb);
 	if (err) {
-		RT_TRACE(rtlpriv, COMP_ERR, DBG_EMERG,
-			 "Failed to request firmware!\n");
+		pr_err("Failed to request firmware!\n");
 		return 1;
 	}
 
@@ -212,7 +200,6 @@ bool rtl92ee_get_btc_status(void)
 {
 	return true;
 }
-
 
 static struct rtl_hal_ops rtl8192ee_hal_ops = {
 	.init_sw_vars = rtl92ee_init_sw_vars,
@@ -251,11 +238,11 @@ static struct rtl_hal_ops rtl8192ee_hal_ops = {
 	.set_desc = rtl92ee_set_desc,
 	.get_desc = rtl92ee_get_desc,
 	.is_tx_desc_closed = rtl92ee_is_tx_desc_closed,
+	.get_available_desc = rtl92ee_get_available_desc,
 	.tx_polling = rtl92ee_tx_polling,
 	.enable_hw_sec = rtl92ee_enable_hw_security_config,
 	.set_key = rtl92ee_set_key,
 	.init_sw_leds = rtl92ee_init_sw_leds,
-	.allow_all_destaddr = rtl92ee_allow_all_destaddr,
 	.get_bbreg = rtl92ee_phy_query_bb_reg,
 	.set_bbreg = rtl92ee_phy_set_bb_reg,
 	.get_rfreg = rtl92ee_phy_query_rf_reg,
@@ -263,22 +250,22 @@ static struct rtl_hal_ops rtl8192ee_hal_ops = {
 	.fill_h2c_cmd = rtl92ee_fill_h2c_cmd,
 	.get_btc_status = rtl92ee_get_btc_status,
 	.rx_command_packet = rtl92ee_rx_command_packet,
+	.c2h_content_parsing = rtl92ee_c2h_content_parsing,
 };
 
 static struct rtl_mod_params rtl92ee_mod_params = {
 	.sw_crypto = false,
-	.inactiveps = false,
+	.inactiveps = true,
 	.swctrl_lps = false,
 	.fwctrl_lps = true,
 	.msi_support = true,
-	.debug = DBG_EMERG,
+	.debug = 0,
 };
 
-static struct rtl_hal_cfg rtl92ee_hal_cfg = {
+static const struct rtl_hal_cfg rtl92ee_hal_cfg = {
 	.bar_id = 2,
 	.write_readback = true,
 	.name = "rtl92ee_pci",
-	.fw_name = "rtlwifi/rtl8192eefw.bin",
 	.ops = &rtl8192ee_hal_ops,
 	.mod_params = &rtl92ee_mod_params,
 
@@ -325,7 +312,6 @@ static struct rtl_hal_cfg rtl92ee_hal_cfg = {
 	.maps[RTL_IMR_BCNDMAINT3] = IMR_BCNDMAINT3,
 	.maps[RTL_IMR_BCNDMAINT2] = IMR_BCNDMAINT2,
 	.maps[RTL_IMR_BCNDMAINT1] = IMR_BCNDMAINT1,
-/*	.maps[RTL_IMR_BCNDOK8] = IMR_BCNDOK8,     */   /*need check*/
 	.maps[RTL_IMR_BCNDOK7] = IMR_BCNDOK7,
 	.maps[RTL_IMR_BCNDOK6] = IMR_BCNDOK6,
 	.maps[RTL_IMR_BCNDOK5] = IMR_BCNDOK5,
@@ -333,12 +319,10 @@ static struct rtl_hal_cfg rtl92ee_hal_cfg = {
 	.maps[RTL_IMR_BCNDOK3] = IMR_BCNDOK3,
 	.maps[RTL_IMR_BCNDOK2] = IMR_BCNDOK2,
 	.maps[RTL_IMR_BCNDOK1] = IMR_BCNDOK1,
-/*	.maps[RTL_IMR_TIMEOUT2] = IMR_TIMEOUT2,*/
-/*	.maps[RTL_IMR_TIMEOUT1] = IMR_TIMEOUT1,*/
 
 	.maps[RTL_IMR_TXFOVW] = IMR_TXFOVW,
 	.maps[RTL_IMR_PSTIMEOUT] = IMR_PSTIMEOUT,
-	.maps[RTL_IMR_BcnInt] = IMR_BCNDMAINT0,
+	.maps[RTL_IMR_BCNINT] = IMR_BCNDMAINT0,
 	.maps[RTL_IMR_RXFOVW] = IMR_RXFOVW,
 	.maps[RTL_IMR_RDU] = IMR_RDU,
 	.maps[RTL_IMR_ATIMEND] = IMR_ATIMEND,
@@ -390,7 +374,8 @@ module_param_named(ips, rtl92ee_mod_params.inactiveps, bool, 0444);
 module_param_named(swlps, rtl92ee_mod_params.swctrl_lps, bool, 0444);
 module_param_named(fwlps, rtl92ee_mod_params.fwctrl_lps, bool, 0444);
 module_param_named(msi, rtl92ee_mod_params.msi_support, bool, 0444);
-module_param_named(disable_watchdog, rtl92ee_mod_params.disable_watchdog, bool, 0444);
+module_param_named(disable_watchdog, rtl92ee_mod_params.disable_watchdog,
+		   bool, 0444);
 MODULE_PARM_DESC(swenc, "Set to 1 for software crypto (default 0)\n");
 MODULE_PARM_DESC(ips, "Set to 0 to not use link power save (default 1)\n");
 MODULE_PARM_DESC(swlps, "Set to 1 to use SW control power save (default 0)\n");
@@ -409,25 +394,4 @@ static struct pci_driver rtl92ee_driver = {
 	.driver.pm = &rtlwifi_pm_ops,
 };
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0))
 module_pci_driver(rtl92ee_driver);
-#else
-static int __init rtl92ee_module_init(void)
-{
-	int ret;
-
-	ret = pci_register_driver(&rtl92ee_driver);
-	if (ret)
-		RT_ASSERT(false, ": No device found\n");
-
-	return ret;
-}
-
-static void __exit rtl92ee_module_exit(void)
-{
-	pci_unregister_driver(&rtl92ee_driver);
-}
-
-module_init(rtl92ee_module_init);
-module_exit(rtl92ee_module_exit);
-#endif

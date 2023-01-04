@@ -1,21 +1,17 @@
 /******************************************************************************
  *
- * Copyright(c) 2009-2010  Realtek Corporation.
+ * Copyright(c) 2009-2012  Realtek Corporation.
  *
- * Tmis program is free software; you can redistribute it and/or modify it
+ * This program is free software; you can redistribute it and/or modify it
  * under the terms of version 2 of the GNU General Public License as
  * published by the Free Software Foundation.
  *
- * Tmis program is distributed in the hope that it will be useful, but WITHOUT
+ * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
  * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
  * more details.
  *
- * You should have received a copy of the GNU General Public License along with
- * tmis program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110, USA
- *
- * Tme full GNU General Public License is included in this distribution in the
+ * The full GNU General Public License is included in this distribution in the
  * file called LICENSE.
  *
  * Contact Information:
@@ -24,58 +20,19 @@
  * Hsinchu 300, Taiwan.
  *
  * Larry Finger <Larry.Finger@lwfinger.net>
- *
  *****************************************************************************/
 
 #include "wifi.h"
 #include "cam.h"
-#include <linux/moduleparam.h>
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,2,0)) 
-#include <linux/export.h>
-#endif
 
-#ifndef GET_INODE_DATA
-	#define GET_INODE_DATA(__node)		PDE_DATA(__node)
-#endif
+#include <linux/moduleparam.h>
 
 void rtl_dbgp_flag_init(struct ieee80211_hw *hw)
 {
 	struct rtl_priv *rtlpriv = rtl_priv(hw);
 	u8 i;
 
-	rtlpriv->dbg.global_debuglevel = DBG_EMERG;
-
-	rtlpriv->dbg.global_debugcomponents =
-		COMP_ERR |
-		COMP_FW |
-		COMP_INIT |
-		COMP_RECV |
-		COMP_SEND |
-		COMP_MLME |
-		COMP_SCAN |
-		COMP_INTR |
-		COMP_LED |
-		COMP_SEC |
-		COMP_BEACON |
-		COMP_RATE |
-		COMP_RXDESC |
-		COMP_DIG |
-		COMP_TXAGC |
-		COMP_POWER |
-		COMP_POWER_TRACKING |
-		COMP_BB_POWERSAVING |
-		COMP_SWAS |
-		COMP_RF |
-		COMP_TURBO |
-		COMP_RATR |
-		COMP_CMD |
-		COMP_EASY_CONCURRENT |
-		COMP_EFUSE |
-		COMP_QOS | COMP_MAC80211 | COMP_REGD |
-		COMP_CHAN |
-		COMP_BT_COEXIST |
-		COMP_IQK |
-		0;
+	rtlpriv->dbg.global_debug_mask = 0;
 
 	for (i = 0; i < DBGP_TYPE_MAX; i++)
 		rtlpriv->dbg.dbgp_type[i] = 0;
@@ -84,13 +41,87 @@ void rtl_dbgp_flag_init(struct ieee80211_hw *hw)
 }
 EXPORT_SYMBOL_GPL(rtl_dbgp_flag_init);
 
-static struct proc_dir_entry *proc_topdir;
-static int rtl_proc_get_mac_0(struct seq_file *m, void *v)
+#ifdef CONFIG_RTLWIFI_DEBUG
+void _rtl_dbg_trace(struct rtl_priv *rtlpriv, u64 comp, int level,
+		    const char *modname, const char *fmt, ...)
+{
+	if (unlikely((comp & rtlpriv->dbg.global_debug_mask) ||
+		     (level <= rtlpriv->dbg.global_debuglevel))) {
+		struct va_format vaf;
+		va_list args;
+
+		va_start(args, fmt);
+
+		vaf.fmt = fmt;
+		vaf.va = &args;
+
+		printk(KERN_DEBUG "%s:%ps:<%lx-%x> %pV",
+		       modname, __builtin_return_address(0),
+		       in_interrupt(), in_atomic(),
+		       &vaf);
+
+		va_end(args);
+	}
+}
+EXPORT_SYMBOL_GPL(_rtl_dbg_trace);
+
+void _rtl_dbg_trace_string(struct rtl_priv *rtlpriv, u64 comp, int level,
+			   const char *modname, const char *string)
+{
+	if (unlikely(((comp) & rtlpriv->dbg.global_debug_mask) ||
+		     ((level) <= rtlpriv->dbg.global_debuglevel))) {
+		printk(KBUILD_MODNAME ":%s():<%lx> %s",
+		       __func__, in_interrupt(), string);
+	}
+}
+EXPORT_SYMBOL_GPL(_rtl_dbg_trace_string);
+
+void _rtl_dbg_print_data(struct rtl_priv *rtlpriv, u64 comp, int level,
+			 const char *modname, const char *titlestring,
+			 const void *hexdata, int hexdatalen)
+{
+	if (unlikely(((comp) & rtlpriv->dbg.global_debug_mask) ||
+		     ((level) <= rtlpriv->dbg.global_debuglevel))) {
+		printk(KERN_DEBUG "%s: In process \"%s\" (pid %i): %s\n",
+		       KBUILD_MODNAME, current->comm, current->pid,
+		       titlestring);
+		print_hex_dump_bytes("", DUMP_PREFIX_NONE,
+				     hexdata, hexdatalen);
+	}
+}
+EXPORT_SYMBOL_GPL(_rtl_dbg_print_data);
+
+void _rtl_dbg_print(struct rtl_priv *rtlpriv, u64 comp, int level,
+		    const char *modname, const char *fmt, ...)
+{
+	if (unlikely((comp & rtlpriv->dbg.global_debug_mask) ||
+		     (level <= rtlpriv->dbg.global_debuglevel))) {
+		struct va_format vaf;
+		va_list args;
+
+		va_start(args, fmt);
+
+		vaf.fmt = fmt;
+		vaf.va = &args;
+
+		printk(KERN_DEBUG "%s: %pV",
+		       modname, &vaf);
+
+		va_end(args);
+	}
+}
+EXPORT_SYMBOL_GPL(_rtl_dbg_print);
+
+#endif
+
+static struct dentry *debugfs_topdir;
+static int rtl_debug_get_mac_0(struct seq_file *m, void *v)
 {
 	struct ieee80211_hw *hw = m->private;
 	struct rtl_priv *rtlpriv = rtl_priv(hw);
 	int i, n, page;
 	int max = 0xff;
+
 	page = 0x000;
 
 	for (n = 0; n <= max; ) {
@@ -103,28 +134,25 @@ static int rtl_proc_get_mac_0(struct seq_file *m, void *v)
 	return 0;
 }
 
-static int dl_proc_open_mac_0(struct inode *inode, struct file *file)
+static int dl_debug_open_mac_0(struct inode *inode, struct file *file)
 {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0))
-	return single_open(file, rtl_proc_get_mac_0, GET_INODE_DATA(inode));
-#else
-	return single_open(file, rtl_proc_get_mac_0, inode);
-#endif
+	return single_open(file, rtl_debug_get_mac_0, inode->i_private);
 }
 
 static const struct file_operations file_ops_mac_0 = {
-	.open = dl_proc_open_mac_0,
+	.open = dl_debug_open_mac_0,
 	.read = seq_read,
 	.llseek = seq_lseek,
 	.release = seq_release,
 };
 
-static int rtl_proc_get_mac_1(struct seq_file *m, void *v)
+static int rtl_debug_get_mac_1(struct seq_file *m, void *v)
 {
 	struct ieee80211_hw *hw = m->private;
 	struct rtl_priv *rtlpriv = rtl_priv(hw);
 	int i, n, page;
 	int max = 0xff;
+
 	page = 0x100;
 
 	for (n = 0; n <= max; ) {
@@ -137,28 +165,25 @@ static int rtl_proc_get_mac_1(struct seq_file *m, void *v)
 	return 0;
 }
 
-static int dl_proc_open_mac_1(struct inode *inode, struct file *file)
+static int dl_debug_open_mac_1(struct inode *inode, struct file *file)
 {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0))
-	return single_open(file, rtl_proc_get_mac_1, GET_INODE_DATA(inode));
-#else
-	return single_open(file, rtl_proc_get_mac_1, inode);
-#endif
+	return single_open(file, rtl_debug_get_mac_1, inode->i_private);
 }
 
 static const struct file_operations file_ops_mac_1 = {
-	.open = dl_proc_open_mac_1,
+	.open = dl_debug_open_mac_1,
 	.read = seq_read,
 	.llseek = seq_lseek,
 	.release = seq_release,
 };
 
-static int rtl_proc_get_mac_2(struct seq_file *m, void *v)
+static int rtl_debug_get_mac_2(struct seq_file *m, void *v)
 {
 	struct ieee80211_hw *hw = m->private;
 	struct rtl_priv *rtlpriv = rtl_priv(hw);
 	int i, n, page;
 	int max = 0xff;
+
 	page = 0x200;
 
 	for (n = 0; n <= max; ) {
@@ -171,28 +196,25 @@ static int rtl_proc_get_mac_2(struct seq_file *m, void *v)
 	return 0;
 }
 
-static int dl_proc_open_mac_2(struct inode *inode, struct file *file)
+static int dl_debug_open_mac_2(struct inode *inode, struct file *file)
 {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0))
-	return single_open(file, rtl_proc_get_mac_2, GET_INODE_DATA(inode));
-#else
-	return single_open(file, rtl_proc_get_mac_2, inode);
-#endif
+	return single_open(file, rtl_debug_get_mac_2, inode->i_private);
 }
 
 static const struct file_operations file_ops_mac_2 = {
-	.open = dl_proc_open_mac_2,
+	.open = dl_debug_open_mac_2,
 	.read = seq_read,
 	.llseek = seq_lseek,
 	.release = seq_release,
 };
 
-static int rtl_proc_get_mac_3(struct seq_file *m, void *v)
+static int rtl_debug_get_mac_3(struct seq_file *m, void *v)
 {
 	struct ieee80211_hw *hw = m->private;
 	struct rtl_priv *rtlpriv = rtl_priv(hw);
 	int i, n, page;
 	int max = 0xff;
+
 	page = 0x300;
 
 	for (n = 0; n <= max; ) {
@@ -205,28 +227,25 @@ static int rtl_proc_get_mac_3(struct seq_file *m, void *v)
 	return 0;
 }
 
-static int dl_proc_open_mac_3(struct inode *inode, struct file *file)
+static int dl_debug_open_mac_3(struct inode *inode, struct file *file)
 {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0))
-	return single_open(file, rtl_proc_get_mac_3, GET_INODE_DATA(inode));
-#else
-	return single_open(file, rtl_proc_get_mac_3, inode);
-#endif
+	return single_open(file, rtl_debug_get_mac_3, inode->i_private);
 }
 
 static const struct file_operations file_ops_mac_3 = {
-	.open = dl_proc_open_mac_3,
+	.open = dl_debug_open_mac_3,
 	.read = seq_read,
 	.llseek = seq_lseek,
 	.release = seq_release,
 };
 
-static int rtl_proc_get_mac_4(struct seq_file *m, void *v)
+static int rtl_debug_get_mac_4(struct seq_file *m, void *v)
 {
 	struct ieee80211_hw *hw = m->private;
 	struct rtl_priv *rtlpriv = rtl_priv(hw);
 	int i, n, page;
 	int max = 0xff;
+
 	page = 0x400;
 
 	for (n = 0; n <= max; ) {
@@ -239,28 +258,25 @@ static int rtl_proc_get_mac_4(struct seq_file *m, void *v)
 	return 0;
 }
 
-static int dl_proc_open_mac_4(struct inode *inode, struct file *file)
+static int dl_debug_open_mac_4(struct inode *inode, struct file *file)
 {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0))
-	return single_open(file, rtl_proc_get_mac_4, GET_INODE_DATA(inode));
-#else
-	return single_open(file, rtl_proc_get_mac_4, inode);
-#endif
+	return single_open(file, rtl_debug_get_mac_4, inode->i_private);
 }
 
 static const struct file_operations file_ops_mac_4 = {
-	.open = dl_proc_open_mac_4,
+	.open = dl_debug_open_mac_4,
 	.read = seq_read,
 	.llseek = seq_lseek,
 	.release = seq_release,
 };
 
-static int rtl_proc_get_mac_5(struct seq_file *m, void *v)
+static int rtl_debug_get_mac_5(struct seq_file *m, void *v)
 {
 	struct ieee80211_hw *hw = m->private;
 	struct rtl_priv *rtlpriv = rtl_priv(hw);
 	int i, n, page;
 	int max = 0xff;
+
 	page = 0x500;
 
 	for (n = 0; n <= max; ) {
@@ -273,28 +289,25 @@ static int rtl_proc_get_mac_5(struct seq_file *m, void *v)
 	return 0;
 }
 
-static int dl_proc_open_mac_5(struct inode *inode, struct file *file)
+static int dl_debug_open_mac_5(struct inode *inode, struct file *file)
 {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0))
-	return single_open(file, rtl_proc_get_mac_5, GET_INODE_DATA(inode));
-#else
-	return single_open(file, rtl_proc_get_mac_5, inode);
-#endif
+	return single_open(file, rtl_debug_get_mac_5, inode->i_private);
 }
 
 static const struct file_operations file_ops_mac_5 = {
-	.open = dl_proc_open_mac_5,
+	.open = dl_debug_open_mac_5,
 	.read = seq_read,
 	.llseek = seq_lseek,
 	.release = seq_release,
 };
 
-static int rtl_proc_get_mac_6(struct seq_file *m, void *v)
+static int rtl_debug_get_mac_6(struct seq_file *m, void *v)
 {
 	struct ieee80211_hw *hw = m->private;
 	struct rtl_priv *rtlpriv = rtl_priv(hw);
 	int i, n, page;
 	int max = 0xff;
+
 	page = 0x600;
 
 	for (n = 0; n <= max; ) {
@@ -307,28 +320,25 @@ static int rtl_proc_get_mac_6(struct seq_file *m, void *v)
 	return 0;
 }
 
-static int dl_proc_open_mac_6(struct inode *inode, struct file *file)
+static int dl_debug_open_mac_6(struct inode *inode, struct file *file)
 {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0))
-	return single_open(file, rtl_proc_get_mac_6, GET_INODE_DATA(inode));
-#else
-	return single_open(file, rtl_proc_get_mac_6, inode);
-#endif
+	return single_open(file, rtl_debug_get_mac_6, inode->i_private);
 }
 
 static const struct file_operations file_ops_mac_6 = {
-	.open = dl_proc_open_mac_6,
+	.open = dl_debug_open_mac_6,
 	.read = seq_read,
 	.llseek = seq_lseek,
 	.release = seq_release,
 };
 
-static int rtl_proc_get_mac_7(struct seq_file *m, void *v)
+static int rtl_debug_get_mac_7(struct seq_file *m, void *v)
 {
 	struct ieee80211_hw *hw = m->private;
 	struct rtl_priv *rtlpriv = rtl_priv(hw);
 	int i, n, page;
 	int max = 0xff;
+
 	page = 0x700;
 
 	for (n = 0; n <= max; ) {
@@ -341,27 +351,24 @@ static int rtl_proc_get_mac_7(struct seq_file *m, void *v)
 	return 0;
 }
 
-static int dl_proc_open_mac_7(struct inode *inode, struct file *file)
+static int dl_debug_open_mac_7(struct inode *inode, struct file *file)
 {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0))
-	return single_open(file, rtl_proc_get_mac_7, GET_INODE_DATA(inode));
-#else
-	return single_open(file, rtl_proc_get_mac_7, inode);
-#endif
+	return single_open(file, rtl_debug_get_mac_7, inode->i_private);
 }
 
 static const struct file_operations file_ops_mac_7 = {
-	.open = dl_proc_open_mac_7,
+	.open = dl_debug_open_mac_7,
 	.read = seq_read,
 	.llseek = seq_lseek,
 	.release = seq_release,
 };
 
-static int rtl_proc_get_bb_8(struct seq_file *m, void *v)
+static int rtl_debug_get_bb_8(struct seq_file *m, void *v)
 {
 	struct ieee80211_hw *hw = m->private;
 	int i, n, page;
 	int max = 0xff;
+
 	page = 0x800;
 
 	for (n = 0; n <= max; ) {
@@ -374,27 +381,24 @@ static int rtl_proc_get_bb_8(struct seq_file *m, void *v)
 	return 0;
 }
 
-static int dl_proc_open_bb_8(struct inode *inode, struct file *file)
+static int dl_debug_open_bb_8(struct inode *inode, struct file *file)
 {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0))
-	return single_open(file, rtl_proc_get_bb_8, GET_INODE_DATA(inode));
-#else
-	return single_open(file, rtl_proc_get_bb_8, inode);
-#endif
+	return single_open(file, rtl_debug_get_bb_8, inode->i_private);
 }
 
 static const struct file_operations file_ops_bb_8 = {
-	.open = dl_proc_open_bb_8,
+	.open = dl_debug_open_bb_8,
 	.read = seq_read,
 	.llseek = seq_lseek,
 	.release = seq_release,
 };
 
-static int rtl_proc_get_bb_9(struct seq_file *m, void *v)
+static int rtl_debug_get_bb_9(struct seq_file *m, void *v)
 {
 	struct ieee80211_hw *hw = m->private;
 	int i, n, page;
 	int max = 0xff;
+
 	page = 0x900;
 
 	for (n = 0; n <= max; ) {
@@ -407,27 +411,24 @@ static int rtl_proc_get_bb_9(struct seq_file *m, void *v)
 	return 0;
 }
 
-static int dl_proc_open_bb_9(struct inode *inode, struct file *file)
+static int dl_debug_open_bb_9(struct inode *inode, struct file *file)
 {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0))
-	return single_open(file, rtl_proc_get_bb_9, GET_INODE_DATA(inode));
-#else
-	return single_open(file, rtl_proc_get_bb_9, inode);
-#endif
+	return single_open(file, rtl_debug_get_bb_9, inode->i_private);
 }
 
 static const struct file_operations file_ops_bb_9 = {
-	.open = dl_proc_open_bb_9,
+	.open = dl_debug_open_bb_9,
 	.read = seq_read,
 	.llseek = seq_lseek,
 	.release = seq_release,
 };
 
-static int rtl_proc_get_bb_a(struct seq_file *m, void *v)
+static int rtl_debug_get_bb_a(struct seq_file *m, void *v)
 {
 	struct ieee80211_hw *hw = m->private;
 	int i, n, page;
 	int max = 0xff;
+
 	page = 0xa00;
 
 	for (n = 0; n <= max; ) {
@@ -440,27 +441,24 @@ static int rtl_proc_get_bb_a(struct seq_file *m, void *v)
 	return 0;
 }
 
-static int dl_proc_open_bb_a(struct inode *inode, struct file *file)
+static int dl_debug_open_bb_a(struct inode *inode, struct file *file)
 {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0))
-	return single_open(file, rtl_proc_get_bb_a, GET_INODE_DATA(inode));
-#else
-	return single_open(file, rtl_proc_get_bb_a, inode);
-#endif
+	return single_open(file, rtl_debug_get_bb_a, inode->i_private);
 }
 
 static const struct file_operations file_ops_bb_a = {
-	.open = dl_proc_open_bb_a,
+	.open = dl_debug_open_bb_a,
 	.read = seq_read,
 	.llseek = seq_lseek,
 	.release = seq_release,
 };
 
-static int rtl_proc_get_bb_b(struct seq_file *m, void *v)
+static int rtl_debug_get_bb_b(struct seq_file *m, void *v)
 {
 	struct ieee80211_hw *hw = m->private;
 	int i, n, page;
 	int max = 0xff;
+
 	page = 0xb00;
 
 	for (n = 0; n <= max; ) {
@@ -473,27 +471,24 @@ static int rtl_proc_get_bb_b(struct seq_file *m, void *v)
 	return 0;
 }
 
-static int dl_proc_open_bb_b(struct inode *inode, struct file *file)
+static int dl_debug_open_bb_b(struct inode *inode, struct file *file)
 {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0))
-	return single_open(file, rtl_proc_get_bb_b, GET_INODE_DATA(inode));
-#else
-	return single_open(file, rtl_proc_get_bb_b, inode);
-#endif
+	return single_open(file, rtl_debug_get_bb_b, inode->i_private);
 }
 
 static const struct file_operations file_ops_bb_b = {
-	.open = dl_proc_open_bb_b,
+	.open = dl_debug_open_bb_b,
 	.read = seq_read,
 	.llseek = seq_lseek,
 	.release = seq_release,
 };
 
-static int rtl_proc_get_bb_c(struct seq_file *m, void *v)
+static int rtl_debug_get_bb_c(struct seq_file *m, void *v)
 {
 	struct ieee80211_hw *hw = m->private;
 	int i, n, page;
 	int max = 0xff;
+
 	page = 0xc00;
 
 	for (n = 0; n <= max; ) {
@@ -506,27 +501,24 @@ static int rtl_proc_get_bb_c(struct seq_file *m, void *v)
 	return 0;
 }
 
-static int dl_proc_open_bb_c(struct inode *inode, struct file *file)
+static int dl_debug_open_bb_c(struct inode *inode, struct file *file)
 {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0))
-	return single_open(file, rtl_proc_get_bb_c, GET_INODE_DATA(inode));
-#else
-	return single_open(file, rtl_proc_get_bb_c, inode);
-#endif
+	return single_open(file, rtl_debug_get_bb_c, inode->i_private);
 }
 
 static const struct file_operations file_ops_bb_c = {
-	.open = dl_proc_open_bb_c,
+	.open = dl_debug_open_bb_c,
 	.read = seq_read,
 	.llseek = seq_lseek,
 	.release = seq_release,
 };
 
-static int rtl_proc_get_bb_d(struct seq_file *m, void *v)
+static int rtl_debug_get_bb_d(struct seq_file *m, void *v)
 {
 	struct ieee80211_hw *hw = m->private;
 	int i, n, page;
 	int max = 0xff;
+
 	page = 0xd00;
 
 	for (n = 0; n <= max; ) {
@@ -539,27 +531,24 @@ static int rtl_proc_get_bb_d(struct seq_file *m, void *v)
 	return 0;
 }
 
-static int dl_proc_open_bb_d(struct inode *inode, struct file *file)
+static int dl_debug_open_bb_d(struct inode *inode, struct file *file)
 {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0))
-	return single_open(file, rtl_proc_get_bb_d, GET_INODE_DATA(inode));
-#else
-	return single_open(file, rtl_proc_get_bb_d, inode);
-#endif
+	return single_open(file, rtl_debug_get_bb_d, inode->i_private);
 }
 
 static const struct file_operations file_ops_bb_d = {
-	.open = dl_proc_open_bb_d,
+	.open = dl_debug_open_bb_d,
 	.read = seq_read,
 	.llseek = seq_lseek,
 	.release = seq_release,
 };
 
-static int rtl_proc_get_bb_e(struct seq_file *m, void *v)
+static int rtl_debug_get_bb_e(struct seq_file *m, void *v)
 {
 	struct ieee80211_hw *hw = m->private;
 	int i, n, page;
 	int max = 0xff;
+
 	page = 0xe00;
 
 	for (n = 0; n <= max; ) {
@@ -572,27 +561,24 @@ static int rtl_proc_get_bb_e(struct seq_file *m, void *v)
 	return 0;
 }
 
-static int dl_proc_open_bb_e(struct inode *inode, struct file *file)
+static int dl_debug_open_bb_e(struct inode *inode, struct file *file)
 {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0))
-	return single_open(file, rtl_proc_get_bb_e, GET_INODE_DATA(inode));
-#else
-	return single_open(file, rtl_proc_get_bb_e, inode);
-#endif
+	return single_open(file, rtl_debug_get_bb_e, inode->i_private);
 }
 
 static const struct file_operations file_ops_bb_e = {
-	.open = dl_proc_open_bb_e,
+	.open = dl_debug_open_bb_e,
 	.read = seq_read,
 	.llseek = seq_lseek,
 	.release = seq_release,
 };
 
-static int rtl_proc_get_bb_f(struct seq_file *m, void *v)
+static int rtl_debug_get_bb_f(struct seq_file *m, void *v)
 {
 	struct ieee80211_hw *hw = m->private;
 	int i, n, page;
 	int max = 0xff;
+
 	page = 0xf00;
 
 	for (n = 0; n <= max; ) {
@@ -605,23 +591,19 @@ static int rtl_proc_get_bb_f(struct seq_file *m, void *v)
 	return 0;
 }
 
-static int dl_proc_open_bb_f(struct inode *inode, struct file *file)
+static int dl_debug_open_bb_f(struct inode *inode, struct file *file)
 {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0))
-	return single_open(file, rtl_proc_get_bb_f, GET_INODE_DATA(inode));
-#else
-	return single_open(file, rtl_proc_get_bb_f, inode);
-#endif
+	return single_open(file, rtl_debug_get_bb_f, inode->i_private);
 }
 
 static const struct file_operations file_ops_bb_f = {
-	.open = dl_proc_open_bb_f,
+	.open = dl_debug_open_bb_f,
 	.read = seq_read,
 	.llseek = seq_lseek,
 	.release = seq_release,
 };
 
-static int rtl_proc_get_reg_rf_a(struct seq_file *m, void *v)
+static int rtl_debug_get_reg_rf_a(struct seq_file *m, void *v)
 {
 	struct ieee80211_hw *hw = m->private;
 	int i, n;
@@ -631,30 +613,26 @@ static int rtl_proc_get_reg_rf_a(struct seq_file *m, void *v)
 		seq_printf(m, "\n%8.8x  ", n);
 		for (i = 0; i < 4 && n <= max; n += 1, i++)
 			seq_printf(m, "%8.8x    ",
-				rtl_get_rfreg(hw, RF90_PATH_A,
-				n, 0xffffffff));
+				   rtl_get_rfreg(hw, RF90_PATH_A,
+						 n, 0xffffffff));
 	}
 	seq_puts(m, "\n");
 	return 0;
 }
 
-static int dl_proc_open_rf_a(struct inode *inode, struct file *file)
+static int dl_debug_open_rf_a(struct inode *inode, struct file *file)
 {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0))
-	return single_open(file, rtl_proc_get_reg_rf_a, GET_INODE_DATA(inode));
-#else
-	return single_open(file, rtl_proc_get_reg_rf_a, inode);
-#endif
+	return single_open(file, rtl_debug_get_reg_rf_a, inode->i_private);
 }
 
 static const struct file_operations file_ops_rf_a = {
-	.open = dl_proc_open_rf_a,
+	.open = dl_debug_open_rf_a,
 	.read = seq_read,
 	.llseek = seq_lseek,
 	.release = seq_release,
 };
 
-static int rtl_proc_get_reg_rf_b(struct seq_file *m, void *v)
+static int rtl_debug_get_reg_rf_b(struct seq_file *m, void *v)
 {
 	struct ieee80211_hw *hw = m->private;
 	int i, n;
@@ -671,23 +649,19 @@ static int rtl_proc_get_reg_rf_b(struct seq_file *m, void *v)
 	return 0;
 }
 
-static int dl_proc_open_rf_b(struct inode *inode, struct file *file)
+static int dl_debug_open_rf_b(struct inode *inode, struct file *file)
 {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0))
-	return single_open(file, rtl_proc_get_reg_rf_b, GET_INODE_DATA(inode));
-#else
-	return single_open(file, rtl_proc_get_reg_rf_b, inode);
-#endif
+	return single_open(file, rtl_debug_get_reg_rf_b, inode->i_private);
 }
 
 static const struct file_operations file_ops_rf_b = {
-	.open = dl_proc_open_rf_b,
+	.open = dl_debug_open_rf_b,
 	.read = seq_read,
 	.llseek = seq_lseek,
 	.release = seq_release,
 };
 
-static int rtl_proc_get_cam_register_1(struct seq_file *m, void *v)
+static int rtl_debug_get_cam_register_1(struct seq_file *m, void *v)
 {
 	struct ieee80211_hw *hw = m->private;
 	struct rtl_priv *rtlpriv = rtl_priv(hw);
@@ -699,7 +673,7 @@ static int rtl_proc_get_cam_register_1(struct seq_file *m, void *v)
 
 	/* This dump the current register page */
 	seq_puts(m,
-	    "\n#################### SECURITY CAM (0-10) ##################\n ");
+		 "\n#################### SECURITY CAM (0-10) ##################\n ");
 
 	for (j = 0; j < 11; j++) {
 		seq_printf(m, "\nD:  %2x > ", j);
@@ -716,7 +690,6 @@ static int rtl_proc_get_cam_register_1(struct seq_file *m, void *v)
 					continue;
 				else
 					break;
-
 			}
 
 			rtl_write_dword(rtlpriv, rtlpriv->cfg->maps[RWCAM],
@@ -730,24 +703,20 @@ static int rtl_proc_get_cam_register_1(struct seq_file *m, void *v)
 	return 0;
 }
 
-static int dl_proc_open_cam_1(struct inode *inode, struct file *file)
+static int dl_debug_open_cam_1(struct inode *inode, struct file *file)
 {
-	return single_open(file, rtl_proc_get_cam_register_1,
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0))
-			   GET_INODE_DATA(inode));
-#else
-			   inode);
-#endif
+	return single_open(file, rtl_debug_get_cam_register_1,
+			   inode->i_private);
 }
 
 static const struct file_operations file_ops_cam_1 = {
-	.open = dl_proc_open_cam_1,
+	.open = dl_debug_open_cam_1,
 	.read = seq_read,
 	.llseek = seq_lseek,
 	.release = seq_release,
 };
 
-static int rtl_proc_get_cam_register_2(struct seq_file *m, void *v)
+static int rtl_debug_get_cam_register_2(struct seq_file *m, void *v)
 {
 	struct ieee80211_hw *hw = m->private;
 	struct rtl_priv *rtlpriv = rtl_priv(hw);
@@ -759,7 +728,7 @@ static int rtl_proc_get_cam_register_2(struct seq_file *m, void *v)
 
 	/* This dump the current register page */
 	seq_puts(m,
-	    "\n################### SECURITY CAM (11-21) ##################\n ");
+		 "\n################### SECURITY CAM (11-21) ##################\n ");
 
 	for (j = 11; j < 22; j++) {
 		seq_printf(m, "\nD:  %2x > ", j);
@@ -774,7 +743,6 @@ static int rtl_proc_get_cam_register_2(struct seq_file *m, void *v)
 					continue;
 				else
 					break;
-
 			}
 
 			rtl_write_dword(rtlpriv, rtlpriv->cfg->maps[RWCAM],
@@ -788,24 +756,20 @@ static int rtl_proc_get_cam_register_2(struct seq_file *m, void *v)
 	return 0;
 }
 
-static int dl_proc_open_cam_2(struct inode *inode, struct file *file)
+static int dl_debug_open_cam_2(struct inode *inode, struct file *file)
 {
-	return single_open(file, rtl_proc_get_cam_register_2,
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0))
-			   GET_INODE_DATA(inode));
-#else
-			   inode);
-#endif
+	return single_open(file, rtl_debug_get_cam_register_2,
+			   inode->i_private);
 }
 
 static const struct file_operations file_ops_cam_2 = {
-	.open = dl_proc_open_cam_2,
+	.open = dl_debug_open_cam_2,
 	.read = seq_read,
 	.llseek = seq_lseek,
 	.release = seq_release,
 };
 
-static int rtl_proc_get_cam_register_3(struct seq_file *m, void *v)
+static int rtl_debug_get_cam_register_3(struct seq_file *m, void *v)
 {
 	struct ieee80211_hw *hw = m->private;
 	struct rtl_priv *rtlpriv = rtl_priv(hw);
@@ -817,12 +781,12 @@ static int rtl_proc_get_cam_register_3(struct seq_file *m, void *v)
 
 	/* This dump the current register page */
 	seq_puts(m,
-	    "\n################### SECURITY CAM (22-31) ##################\n ");
+		 "\n################### SECURITY CAM (22-31) ##################\n ");
 
 	for (j = 22; j < TOTAL_CAM_ENTRY; j++) {
 		seq_printf(m, "\nD:  %2x > ", j);
 		for (entry_i = 0; entry_i < CAM_CONTENT_COUNT; entry_i++) {
-			target_cmd = entry_i+CAM_CONTENT_COUNT*j;
+			target_cmd = entry_i + CAM_CONTENT_COUNT * j;
 			target_cmd = target_cmd | BIT(31);
 
 			while ((i--) >= 0) {
@@ -845,232 +809,337 @@ static int rtl_proc_get_cam_register_3(struct seq_file *m, void *v)
 	return 0;
 }
 
-static int dl_proc_open_cam_3(struct inode *inode, struct file *file)
+static int dl_debug_open_cam_3(struct inode *inode, struct file *file)
 {
-	return single_open(file, rtl_proc_get_cam_register_3,
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0))
-			   GET_INODE_DATA(inode));
-#else
-			   inode);
-#endif
+	return single_open(file, rtl_debug_get_cam_register_3,
+			   inode->i_private);
 }
 
 static const struct file_operations file_ops_cam_3 = {
-	.open = dl_proc_open_cam_3,
+	.open = dl_debug_open_cam_3,
 	.read = seq_read,
 	.llseek = seq_lseek,
 	.release = seq_release,
 };
 
-void rtl_proc_add_one(struct ieee80211_hw *hw)
+static int rtl_debug_get_btcoex(struct seq_file *m, void *v)
+{
+	struct ieee80211_hw *hw = m->private;
+	struct rtl_priv *rtlpriv = rtl_priv(hw);
+	u8 *buff;
+	u32 size = 30 * 100;
+	int n;
+
+	buff = kzalloc(size, GFP_KERNEL);
+
+	if (!buff)
+		return 0;
+
+	rtlpriv->btcoexist.btc_ops->btc_display_bt_coex_info(buff, size);
+
+	n = strlen(buff);
+
+	buff[n++] = '\n';
+	buff[n++] = '\0';
+
+	seq_write(m, buff, n);
+
+	kfree(buff);
+	return 0;
+}
+
+static int dl_debug_open_btcoex(struct inode *inode, struct file *file)
+{
+	return single_open(file, rtl_debug_get_btcoex,
+					   inode->i_private);
+}
+
+static const struct file_operations file_ops_btcoex = {
+	.open = dl_debug_open_btcoex,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = seq_release,
+};
+
+static ssize_t rtl_debugfs_set_write_reg(struct file *filp,
+					 const char __user *buffer,
+					 size_t count, loff_t *loff)
+{
+	struct ieee80211_hw *hw = filp->private_data;
+	struct rtl_priv *rtlpriv = rtl_priv(hw);
+
+	char tmp[32];
+	u32 addr, val, len;
+
+	if (count < 3) {
+		/*printk("argument size is less than 3\n");*/
+		return -EFAULT;
+	}
+
+	if (buffer && !copy_from_user(tmp, buffer, sizeof(tmp))) {
+		int num = sscanf(tmp, "%x %x %x", &addr, &val, &len);
+
+		if (num !=  3) {
+			/*printk("invalid write_reg parameter!\n");*/
+			return count;
+		}
+
+		switch (len) {
+		case 1:
+			rtl_write_byte(rtlpriv, addr, (u8)val);
+			break;
+		case 2:
+			rtl_write_word(rtlpriv, addr, (u16)val);
+			break;
+		case 4:
+			rtl_write_dword(rtlpriv, addr, val);
+			break;
+		default:
+			/*printk("error write length=%d", len);*/
+			break;
+		}
+	}
+	return count;
+}
+
+static int rtl_debugfs_open(struct inode *inode, struct file *filp)
+{
+	filp->private_data = inode->i_private;
+
+	return 0;
+}
+
+static int rtl_debugfs_close(struct inode *inode, struct file *filp)
+{
+	return 0;
+}
+
+static const struct file_operations file_ops_write_reg = {
+	.owner = THIS_MODULE,
+	.write = rtl_debugfs_set_write_reg,
+	.open = rtl_debugfs_open,
+	.release = rtl_debugfs_close,
+};
+
+void rtl_debug_add_one(struct ieee80211_hw *hw)
 {
 	struct rtl_priv *rtlpriv = rtl_priv(hw);
 	struct rtl_efuse *rtlefuse = rtl_efuse(rtl_priv(hw));
-	struct proc_dir_entry *entry;
+	struct dentry *entry1;
 
-	snprintf(rtlpriv->dbg.proc_name, 18, "%x-%x-%x-%x-%x-%x",
-		rtlefuse->dev_addr[0], rtlefuse->dev_addr[1],
-		rtlefuse->dev_addr[2], rtlefuse->dev_addr[3],
-		rtlefuse->dev_addr[4], rtlefuse->dev_addr[5]);
+	snprintf(rtlpriv->dbg.debugfs_name, 18, "%02x-%02x-%02x-%02x-%02x-%02x",
+		 rtlefuse->dev_addr[0], rtlefuse->dev_addr[1],
+		 rtlefuse->dev_addr[2], rtlefuse->dev_addr[3],
+		 rtlefuse->dev_addr[4], rtlefuse->dev_addr[5]);
 
-	rtlpriv->dbg.proc_dir = proc_mkdir(rtlpriv->dbg.proc_name, proc_topdir);
-	if (!rtlpriv->dbg.proc_dir) {
-		RT_TRACE(rtlpriv, COMP_INIT, DBG_EMERG, "Unable to init "
-			"/proc/net/%s/%s\n", rtlpriv->cfg->name,
-			rtlpriv->dbg.proc_name);
+	rtlpriv->dbg.debugfs_dir =
+		debugfs_create_dir(rtlpriv->dbg.debugfs_name, debugfs_topdir);
+	if (!rtlpriv->dbg.debugfs_dir) {
+		pr_err("Unable to init debugfs:/%s/%s\n", rtlpriv->cfg->name,
+		       rtlpriv->dbg.debugfs_name);
 		return;
 	}
 
-	entry = proc_create_data("mac-0", S_IFREG | S_IRUGO,
-				  rtlpriv->dbg.proc_dir, &file_ops_mac_0, hw);
-	if (!entry)
-		RT_TRACE(rtlpriv, COMP_INIT, DBG_EMERG,
-			 "Unable to initialize /proc/net/%s/%s/mac-0\n",
-			  rtlpriv->cfg->name, rtlpriv->dbg.proc_name);
+	entry1 = debugfs_create_file("mac-0", S_IFREG | 0400,
+				     rtlpriv->dbg.debugfs_dir, hw,
+				     &file_ops_mac_0);
+	if (!entry1)
+		pr_err("Unable to initialize debugfs:/%s/%s/mac-0\n",
+		       rtlpriv->cfg->name, rtlpriv->dbg.debugfs_name);
 
-	entry = proc_create_data("mac-1", S_IFREG | S_IRUGO,
-				 rtlpriv->dbg.proc_dir, &file_ops_mac_1, hw);
-	if (!entry)
+	entry1 = debugfs_create_file("mac-1", S_IFREG | 0400,
+				     rtlpriv->dbg.debugfs_dir, hw,
+				     &file_ops_mac_1);
+	if (!entry1)
 		RT_TRACE(rtlpriv, COMP_INIT, COMP_ERR,
-			 "Unable to initialize /proc/net/%s/%s/mac-1\n",
-			  rtlpriv->cfg->name, rtlpriv->dbg.proc_name);
+			 "Unable to initialize debugfs:/%s/%s/mac-1\n",
+			 rtlpriv->cfg->name, rtlpriv->dbg.debugfs_name);
 
-	entry = proc_create_data("mac-2", S_IFREG | S_IRUGO,
-				 rtlpriv->dbg.proc_dir, &file_ops_mac_2, hw);
-	if (!entry)
+	entry1 = debugfs_create_file("mac-2", S_IFREG | 0400,
+				     rtlpriv->dbg.debugfs_dir, hw,
+				     &file_ops_mac_2);
+	if (!entry1)
 		RT_TRACE(rtlpriv, COMP_INIT, COMP_ERR,
-			 "Unable to initialize /proc/net/%s/%s/mac-2\n",
-			  rtlpriv->cfg->name, rtlpriv->dbg.proc_name);
+			 "Unable to initialize debugfs:/%s/%s/mac-2\n",
+			 rtlpriv->cfg->name, rtlpriv->dbg.debugfs_name);
 
-	entry = proc_create_data("mac-3", S_IFREG | S_IRUGO,
-				 rtlpriv->dbg.proc_dir, &file_ops_mac_3, hw);
-	if (!entry)
+	entry1 = debugfs_create_file("mac-3", S_IFREG | 0400,
+				     rtlpriv->dbg.debugfs_dir, hw,
+				     &file_ops_mac_3);
+	if (!entry1)
 		RT_TRACE(rtlpriv, COMP_INIT, COMP_ERR,
-			 "Unable to initialize /proc/net/%s/%s/mac-3\n",
-			  rtlpriv->cfg->name, rtlpriv->dbg.proc_name);
+			 "Unable to initialize debugfs:/%s/%s/mac-3\n",
+			 rtlpriv->cfg->name, rtlpriv->dbg.debugfs_name);
 
-	entry = proc_create_data("mac-4", S_IFREG | S_IRUGO,
-				 rtlpriv->dbg.proc_dir, &file_ops_mac_4, hw);
-	if (!entry)
+	entry1 = debugfs_create_file("mac-4", S_IFREG | 0400,
+				     rtlpriv->dbg.debugfs_dir, hw,
+				     &file_ops_mac_4);
+	if (!entry1)
 		RT_TRACE(rtlpriv, COMP_INIT, COMP_ERR,
-			 "Unable to initialize /proc/net/%s/%s/mac-4\n",
-			  rtlpriv->cfg->name, rtlpriv->dbg.proc_name);
+			 "Unable to initialize debugfs:/%s/%s/mac-4\n",
+			 rtlpriv->cfg->name, rtlpriv->dbg.debugfs_name);
 
-	entry = proc_create_data("mac-5", S_IFREG | S_IRUGO,
-				 rtlpriv->dbg.proc_dir, &file_ops_mac_5, hw);
-	if (!entry)
+	entry1 = debugfs_create_file("mac-5", S_IFREG | 0400,
+				     rtlpriv->dbg.debugfs_dir, hw,
+				     &file_ops_mac_5);
+	if (!entry1)
 		RT_TRACE(rtlpriv, COMP_INIT, COMP_ERR,
-			 "Unable to initialize /proc/net/%s/%s/mac-5\n",
-			  rtlpriv->cfg->name, rtlpriv->dbg.proc_name);
+			 "Unable to initialize debugfs:/%s/%s/mac-5\n",
+			 rtlpriv->cfg->name, rtlpriv->dbg.debugfs_name);
 
-	entry = proc_create_data("mac-6", S_IFREG | S_IRUGO,
-				 rtlpriv->dbg.proc_dir, &file_ops_mac_6, hw);
-	if (!entry)
+	entry1 = debugfs_create_file("mac-6", S_IFREG | 0400,
+				     rtlpriv->dbg.debugfs_dir, hw,
+				     &file_ops_mac_6);
+	if (!entry1)
 		RT_TRACE(rtlpriv, COMP_INIT, COMP_ERR,
-			 "Unable to initialize /proc/net/%s/%s/mac-6\n",
-			  rtlpriv->cfg->name, rtlpriv->dbg.proc_name);
+			 "Unable to initialize debugfs:/%s/%s/mac-6\n",
+			 rtlpriv->cfg->name, rtlpriv->dbg.debugfs_name);
 
-	entry = proc_create_data("mac-7", S_IFREG | S_IRUGO,
-				 rtlpriv->dbg.proc_dir, &file_ops_mac_7, hw);
-	if (!entry)
+	entry1 = debugfs_create_file("mac-7", S_IFREG | 0400,
+				     rtlpriv->dbg.debugfs_dir, hw,
+				     &file_ops_mac_7);
+	if (!entry1)
 		RT_TRACE(rtlpriv, COMP_INIT, COMP_ERR,
-			 "Unable to initialize /proc/net/%s/%s/mac-7\n",
-			  rtlpriv->cfg->name, rtlpriv->dbg.proc_name);
+			 "Unable to initialize debugfs:/%s/%s/mac-7\n",
+			 rtlpriv->cfg->name, rtlpriv->dbg.debugfs_name);
 
-	entry = proc_create_data("bb-8", S_IFREG | S_IRUGO,
-				 rtlpriv->dbg.proc_dir, &file_ops_bb_8, hw);
-	if (!entry)
+	entry1 = debugfs_create_file("bb-8", S_IFREG | 0400,
+				     rtlpriv->dbg.debugfs_dir, hw,
+				     &file_ops_bb_8);
+	if (!entry1)
 		RT_TRACE(rtlpriv, COMP_INIT, COMP_ERR,
-			 "Unable to initialize /proc/net/%s/%s/bb-8\n",
-			  rtlpriv->cfg->name, rtlpriv->dbg.proc_name);
+			 "Unable to initialize debugfs:/%s/%s/bb-8\n",
+			 rtlpriv->cfg->name, rtlpriv->dbg.debugfs_name);
 
-	entry = proc_create_data("bb-9", S_IFREG | S_IRUGO,
-				 rtlpriv->dbg.proc_dir, &file_ops_bb_9, hw);
-	if (!entry)
+	entry1 = debugfs_create_file("bb-9", S_IFREG | 0400,
+				     rtlpriv->dbg.debugfs_dir, hw,
+				     &file_ops_bb_9);
+	if (!entry1)
 		RT_TRACE(rtlpriv, COMP_INIT, COMP_ERR,
-			 "Unable to initialize /proc/net/%s/%s/bb-9\n",
-			  rtlpriv->cfg->name, rtlpriv->dbg.proc_name);
+			 "Unable to initialize debugfs:/%s/%s/bb-9\n",
+			 rtlpriv->cfg->name, rtlpriv->dbg.debugfs_name);
 
-	entry = proc_create_data("bb-a", S_IFREG | S_IRUGO,
-				 rtlpriv->dbg.proc_dir, &file_ops_bb_a, hw);
-	if (!entry)
+	entry1 = debugfs_create_file("bb-a", S_IFREG | 0400,
+				     rtlpriv->dbg.debugfs_dir, hw,
+				     &file_ops_bb_a);
+	if (!entry1)
 		RT_TRACE(rtlpriv, COMP_INIT, COMP_ERR,
-			 "Unable to initialize /proc/net/%s/%s/bb-a\n",
-			  rtlpriv->cfg->name, rtlpriv->dbg.proc_name);
+			 "Unable to initialize debugfs:/%s/%s/bb-a\n",
+			 rtlpriv->cfg->name, rtlpriv->dbg.debugfs_name);
 
-	entry = proc_create_data("bb-b", S_IFREG | S_IRUGO,
-				 rtlpriv->dbg.proc_dir, &file_ops_bb_b, hw);
-	if (!entry)
+	entry1 = debugfs_create_file("bb-b", S_IFREG | 0400,
+				     rtlpriv->dbg.debugfs_dir, hw,
+				     &file_ops_bb_b);
+	if (!entry1)
 		RT_TRACE(rtlpriv, COMP_INIT, COMP_ERR,
-			 "Unable to initialize /proc/net/%s/%s/bb-b\n",
-		      rtlpriv->cfg->name, rtlpriv->dbg.proc_name);
+			 "Unable to initialize debugfs:/%s/%s/bb-b\n",
+			 rtlpriv->cfg->name, rtlpriv->dbg.debugfs_name);
 
-	entry = proc_create_data("bb-c", S_IFREG | S_IRUGO,
-				 rtlpriv->dbg.proc_dir, &file_ops_bb_c, hw);
-	if (!entry)
+	entry1 = debugfs_create_file("bb-c", S_IFREG | 0400,
+				     rtlpriv->dbg.debugfs_dir, hw,
+				     &file_ops_bb_c);
+	if (!entry1)
 		RT_TRACE(rtlpriv, COMP_INIT, COMP_ERR,
-			 "Unable to initialize /proc/net/%s/%s/bb-c\n",
-			  rtlpriv->cfg->name, rtlpriv->dbg.proc_name);
+			 "Unable to initialize debugfs:/%s/%s/bb-c\n",
+			 rtlpriv->cfg->name, rtlpriv->dbg.debugfs_name);
 
-	entry = proc_create_data("bb-d", S_IFREG | S_IRUGO,
-				 rtlpriv->dbg.proc_dir, &file_ops_bb_d, hw);
-	if (!entry)
+	entry1 = debugfs_create_file("bb-d", S_IFREG | 0400,
+				     rtlpriv->dbg.debugfs_dir, hw,
+				     &file_ops_bb_d);
+	if (!entry1)
 		RT_TRACE(rtlpriv, COMP_INIT, COMP_ERR,
-			 "Unable to initialize /proc/net/%s/%s/bb-d\n",
-			  rtlpriv->cfg->name, rtlpriv->dbg.proc_name);
+			 "Unable to initialize debugfs:/%s/%s/bb-d\n",
+			 rtlpriv->cfg->name, rtlpriv->dbg.debugfs_name);
 
-	entry = proc_create_data("bb-e", S_IFREG | S_IRUGO,
-				 rtlpriv->dbg.proc_dir, &file_ops_bb_e, hw);
-	if (!entry)
+	entry1 = debugfs_create_file("bb-e", S_IFREG | 0400,
+				     rtlpriv->dbg.debugfs_dir, hw,
+				     &file_ops_bb_e);
+	if (!entry1)
 		RT_TRACE(rtlpriv, COMP_INIT, COMP_ERR,
-			 "Unable to initialize /proc/net/%s/%s/bb-e\n",
-			  rtlpriv->cfg->name, rtlpriv->dbg.proc_name);
+			 "Unable to initialize debugfs:/%s/%s/bb-e\n",
+			 rtlpriv->cfg->name, rtlpriv->dbg.debugfs_name);
 
-	entry = proc_create_data("bb-f", S_IFREG | S_IRUGO,
-				 rtlpriv->dbg.proc_dir, &file_ops_bb_f, hw);
-	if (!entry)
+	entry1 = debugfs_create_file("bb-f", S_IFREG | 0400,
+				     rtlpriv->dbg.debugfs_dir, hw,
+				     &file_ops_bb_f);
+	if (!entry1)
 		RT_TRACE(rtlpriv, COMP_INIT, COMP_ERR,
-			 "Unable to initialize /proc/net/%s/%s/bb-f\n",
-			  rtlpriv->cfg->name, rtlpriv->dbg.proc_name);
+			 "Unable to initialize debugfs:/%s/%s/bb-f\n",
+			 rtlpriv->cfg->name, rtlpriv->dbg.debugfs_name);
 
-	entry = proc_create_data("rf-a", S_IFREG | S_IRUGO,
-				 rtlpriv->dbg.proc_dir, &file_ops_rf_a, hw);
-	if (!entry)
+	entry1 = debugfs_create_file("rf-a", S_IFREG | 0400,
+				     rtlpriv->dbg.debugfs_dir, hw,
+				     &file_ops_rf_a);
+	if (!entry1)
 		RT_TRACE(rtlpriv, COMP_INIT, COMP_ERR,
-			 "Unable to initialize /proc/net/%s/%s/rf-a\n",
-			  rtlpriv->cfg->name, rtlpriv->dbg.proc_name);
+			 "Unable to initialize debugfs:/%s/%s/rf-a\n",
+			 rtlpriv->cfg->name, rtlpriv->dbg.debugfs_name);
 
-	entry = proc_create_data("rf-b", S_IFREG | S_IRUGO,
-				 rtlpriv->dbg.proc_dir, &file_ops_rf_b, hw);
-	if (!entry)
+	entry1 = debugfs_create_file("rf-b", S_IFREG | 0400,
+				     rtlpriv->dbg.debugfs_dir, hw,
+				     &file_ops_rf_b);
+	if (!entry1)
 		RT_TRACE(rtlpriv, COMP_INIT, COMP_ERR,
-			 "Unable to initialize /proc/net/%s/%s/rf-b\n",
-			  rtlpriv->cfg->name, rtlpriv->dbg.proc_name);
+			 "Unable to initialize debugfs:/%s/%s/rf-b\n",
+			 rtlpriv->cfg->name, rtlpriv->dbg.debugfs_name);
 
-	entry = proc_create_data("cam-1", S_IFREG | S_IRUGO,
-				 rtlpriv->dbg.proc_dir, &file_ops_cam_1, hw);
-	if (!entry)
+	entry1 = debugfs_create_file("cam-1", S_IFREG | 0400,
+				     rtlpriv->dbg.debugfs_dir, hw,
+				     &file_ops_cam_1);
+	if (!entry1)
 		RT_TRACE(rtlpriv, COMP_INIT, COMP_ERR,
-			 "Unable to initialize /proc/net/%s/%s/cam-1\n",
-			  rtlpriv->cfg->name, rtlpriv->dbg.proc_name);
+			 "Unable to initialize debugfs:/%s/%s/cam-1\n",
+			 rtlpriv->cfg->name, rtlpriv->dbg.debugfs_name);
 
-	entry = proc_create_data("cam-2", S_IFREG | S_IRUGO,
-				 rtlpriv->dbg.proc_dir, &file_ops_cam_2, hw);
-	if (!entry)
+	entry1 = debugfs_create_file("cam-2", S_IFREG | 0400,
+				     rtlpriv->dbg.debugfs_dir, hw,
+				     &file_ops_cam_2);
+	if (!entry1)
 		RT_TRACE(rtlpriv, COMP_INIT, COMP_ERR,
-			 "Unable to initialize /proc/net/%s/%s/cam-2\n",
-			  rtlpriv->cfg->name, rtlpriv->dbg.proc_name);
+			 "Unable to initialize debugfs:/%s/%s/cam-2\n",
+			  rtlpriv->cfg->name, rtlpriv->dbg.debugfs_name);
 
-	entry = proc_create_data("cam-3", S_IFREG | S_IRUGO,
-				 rtlpriv->dbg.proc_dir, &file_ops_cam_3, hw);
-	if (!entry)
+	entry1 = debugfs_create_file("cam-3", S_IFREG | 0400,
+				     rtlpriv->dbg.debugfs_dir, hw,
+				     &file_ops_cam_3);
+	if (!entry1)
 		RT_TRACE(rtlpriv, COMP_INIT, COMP_ERR,
-			 "Unable to initialize /proc/net/%s/%s/cam-3\n",
-			  rtlpriv->cfg->name, rtlpriv->dbg.proc_name);
+			 "Unable to initialize debugfs:/%s/%s/cam-3\n",
+			 rtlpriv->cfg->name, rtlpriv->dbg.debugfs_name);
+
+	entry1 = debugfs_create_file("btcoex", S_IFREG | 0400,
+				     rtlpriv->dbg.debugfs_dir, hw,
+				     &file_ops_btcoex);
+	if (!entry1)
+		RT_TRACE(rtlpriv, COMP_INIT, COMP_ERR,
+			 "Unable to initialize debugfs:/%s/%s/btcoex\n",
+			 rtlpriv->cfg->name, rtlpriv->dbg.debugfs_name);
+
+	entry1 = debugfs_create_file("write_reg", S_IFREG | 0200,
+				     rtlpriv->dbg.debugfs_dir, hw,
+				     &file_ops_write_reg);
+	if (!entry1)
+		RT_TRACE(rtlpriv, COMP_INIT, COMP_ERR,
+			 "Unable to initialize debugfs:/%s/%s/write_reg\n",
+			 rtlpriv->cfg->name, rtlpriv->dbg.debugfs_name);
 }
-EXPORT_SYMBOL_GPL(rtl_proc_add_one);
+EXPORT_SYMBOL_GPL(rtl_debug_add_one);
 
-void rtl_proc_remove_one(struct ieee80211_hw *hw)
+void rtl_debug_remove_one(struct ieee80211_hw *hw)
 {
 	struct rtl_priv *rtlpriv = rtl_priv(hw);
 
-	if (rtlpriv->dbg.proc_dir) {
-		remove_proc_entry("mac-0", rtlpriv->dbg.proc_dir);
-		remove_proc_entry("mac-1", rtlpriv->dbg.proc_dir);
-		remove_proc_entry("mac-2", rtlpriv->dbg.proc_dir);
-		remove_proc_entry("mac-3", rtlpriv->dbg.proc_dir);
-		remove_proc_entry("mac-4", rtlpriv->dbg.proc_dir);
-		remove_proc_entry("mac-5", rtlpriv->dbg.proc_dir);
-		remove_proc_entry("mac-6", rtlpriv->dbg.proc_dir);
-		remove_proc_entry("mac-7", rtlpriv->dbg.proc_dir);
-		remove_proc_entry("bb-8", rtlpriv->dbg.proc_dir);
-		remove_proc_entry("bb-9", rtlpriv->dbg.proc_dir);
-		remove_proc_entry("bb-a", rtlpriv->dbg.proc_dir);
-		remove_proc_entry("bb-b", rtlpriv->dbg.proc_dir);
-		remove_proc_entry("bb-c", rtlpriv->dbg.proc_dir);
-		remove_proc_entry("bb-d", rtlpriv->dbg.proc_dir);
-		remove_proc_entry("bb-e", rtlpriv->dbg.proc_dir);
-		remove_proc_entry("bb-f", rtlpriv->dbg.proc_dir);
-		remove_proc_entry("rf-a", rtlpriv->dbg.proc_dir);
-		remove_proc_entry("rf-b", rtlpriv->dbg.proc_dir);
-		remove_proc_entry("cam-1", rtlpriv->dbg.proc_dir);
-		remove_proc_entry("cam-2", rtlpriv->dbg.proc_dir);
-		remove_proc_entry("cam-3", rtlpriv->dbg.proc_dir);
-
-		remove_proc_entry(rtlpriv->dbg.proc_name, proc_topdir);
-
-		rtlpriv->dbg.proc_dir = NULL;
-	}
+	debugfs_remove_recursive(rtlpriv->dbg.debugfs_dir);
+	rtlpriv->dbg.debugfs_dir = NULL;
 }
-EXPORT_SYMBOL_GPL(rtl_proc_remove_one);
+EXPORT_SYMBOL_GPL(rtl_debug_remove_one);
 
-void rtl_proc_add_topdir(void)
+void rtl_debugfs_add_topdir(void)
 {
-	proc_topdir = proc_mkdir("rtlwifi", init_net.proc_net);
+	debugfs_topdir = debugfs_create_dir("rtlwifi", NULL);
 }
 
-void rtl_proc_remove_topdir(void)
+void rtl_debugfs_remove_topdir(void)
 {
-	if (proc_topdir)
-		remove_proc_entry("rtlwifi", init_net.proc_net);
+	debugfs_remove_recursive(debugfs_topdir);
 }

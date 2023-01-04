@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- * Copyright(c) 2009-2010  Realtek Corporation.
+ * Copyright(c) 2009-2014  Realtek Corporation.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of version 2 of the GNU General Public License as
@@ -10,10 +10,6 @@
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
  * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
  * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110, USA
  *
  * The full GNU General Public License is included in this distribution in the
  * file called LICENSE.
@@ -41,15 +37,6 @@
 #define CHIP_VENDOR_SMIC			BIT(8)
 /* Currently only for RTL8723B */
 #define EXT_VENDOR_ID				(BIT(18) | BIT(19))
-
-
-enum version_8723be {
-	VERSION_TEST_CHIP_1T1R_8723B = 0x0106,
-	VERSION_NORMAL_SMIC_CHIP_1T1R_8723B = 0x010E,
-	VERSION_NORMAL_SMIC_CHIP_1T1R_8723B_B_CUT = 0x110E,
-	VERSION_NORMAL_SMIC_CHIP_1T1R_8723B_D_CUT = 0x310E,
-	VERSION_UNKNOWN = 0xFF,
-};
 
 enum rx_packet_type {
 	NORMAL_RX,
